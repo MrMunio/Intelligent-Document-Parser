@@ -5,7 +5,7 @@ import { api, ApiError } from "../lib/api";
 import { formatDuration, formatRelative } from "../lib/format";
 import type { JobType } from "../lib/types";
 
-const IN_SENTENCE: Record<JobType, string> = { PHI: "PHI redaction", PARSE: "document parsing", OCR: "text extraction" };
+const IN_SENTENCE: Record<JobType, string> = { PHI: "PHI redaction", PARSE: "document parsing", OCR: "text extraction", EXTRACT: "data extraction" };
 
 interface Engine {
   role: string;
@@ -24,7 +24,8 @@ interface SystemStatus {
   worker: { online: boolean; detail?: string; device?: string; gpu_name?: string; last_seen?: string; started_at?: string; ocr_load_seconds?: number };
   queues: { priority: number | null; default: number | null };
   ocr: { detection_model: string; recognition_model: string; high_performance_inference: boolean; render_dpi: number; render_workers: number };
-  llm: Record<"phi" | "doc", { engines: Engine[]; active: string | null }>;
+  llm: Record<"phi" | "doc" | "extract", { engines: Engine[]; active: string | null }>;
+  extraction?: { context_threshold: number; context_cap_tokens: number; embedding: string; reasoning_effort: string | null };
   limits: { max_upload_mb: number; file_retention_days: number; storage_mode: string };
   jobs_last_24h: { by_status: Record<string, number>; average_duration_ms: Record<string, number>; completed: Record<string, number> };
   users: { total: number; active: number };
@@ -166,6 +167,17 @@ export default function AdminSystem() {
 
           <EngineTable title="PHI detection engines" subtitle="Language model that identifies sensitive entities. The fallback takes over automatically if the primary fails." data={data.llm.phi} />
           <EngineTable title="Document vision engines" subtitle="Vision model that describes figures and charts during document parsing." data={data.llm.doc} />
+          {data.llm.extract && (
+            <EngineTable
+              title="Data extraction engines"
+              subtitle={
+                data.extraction
+                  ? `Reasoning model for document to JSON extraction. Agent sessions are compacted at ${Math.round(data.extraction.context_threshold * 100)}% of the usable window (cap ${data.extraction.context_cap_tokens ? data.extraction.context_cap_tokens.toLocaleString() + " tokens" : "none"}); embeddings: ${data.extraction.embedding}.`
+                  : "Reasoning model for document to JSON extraction."
+              }
+              data={data.llm.extract}
+            />
+          )}
 
           <Section title="Text recognition" subtitle="OCR models used for scanned pages and images">
             <div className="grid gap-x-10 md:grid-cols-2">

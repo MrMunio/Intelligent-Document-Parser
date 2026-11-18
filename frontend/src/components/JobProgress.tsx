@@ -15,6 +15,11 @@ const STAGE_LABELS: Record<string, string> = {
   verifying: "Verifying the output",
   parsing: "Parsing pages",
   describing: "Describing figures",
+  reading: "Reading the document",
+  indexing: "Mapping and indexing the document",
+  agent: "Agent extracting fields",
+  extracting: "Extracting fields part by part",
+  finishing: "Writing the result",
 };
 
 export function JobProgress({ job }: { job: Job }) {

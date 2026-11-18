@@ -1,0 +1,770 @@
+{
+  "schema_version": 1,
+  "as_of": "2026-11-18",
+  "description": "LLM engines known to the platform: context window, output limit, prices (USD per 1M tokens) and capabilities. Used by the data extraction service to size chunks, decide when an agent session must be compacted, and report cost. The compaction threshold itself is an environment setting (EXTRACT_CONTEXT_THRESHOLD), not part of this file.",
+  "sources": {
+    "anthropic": "Anthropic Models API (GET /v1/models, max_input_tokens and max_tokens) checked 2026-11-18; prices from the Claude API pricing reference cached 2026-11-03",
+    "openai": "https://developers.openai.com/api/docs/pricing and https://developers.openai.com/api/docs/models (gpt-6.2-sol page) checked 2026-11-18; gpt-6-luna, gpt-6.1-terra and gpt-6.1-sol model pages checked 2026-11-18",
+    "gemini": "https://aistudio.google.com/docs/pricing and https://aistudio.google.com/docs/models checked 2026-11-18",
+    "ollama": "Local models; no token cost. The usable context is limited by OLLAMA_NUM_CTX."
+  },
+  "field_notes": {
+    "context_window": "Total tokens the model accepts (input plus output) according to the provider.",
+    "max_input_tokens": "Largest prompt accepted, when the provider publishes it separately from the context window.",
+    "max_output_tokens": "Largest completion the model can produce.",
+    "pricing": "USD per 1M tokens on the standard tier. cached_input is the price of a prompt-cache read, cache_write the price of writing the cache (Anthropic only).",
+    "long_context": "Higher prices that apply to the whole request when the prompt is larger than threshold_tokens.",
+    "scheduled_pricing": "Announced price changes; the entry whose effective date has passed replaces the base prices.",
+    "context_verified": "true when the context window was confirmed from a first-party source (API or model page); false when it is inferred.",
+    "account_models": "Optional per provider: the models this deployment's account may use. When present, only these are offered for selection (configured engines are always allowed); the other entries stay for pricing."
+  },
+  "providers": {
+    "anthropic": {
+      "display_name": "Anthropic Claude",
+      "api_key_setting": "ANTHROPIC_API_KEY",
+      "recommended": {
+        "agentic": "claude-sonnet-5-5",
+        "batch": "claude-sonnet-5-5",
+        "toc": "claude-haiku-5-5"
+      },
+      "models": [
+        {
+          "id": "claude-fable-5-2",
+          "display_name": "Claude Fable 5.2",
+          "tier": "frontier",
+          "status": "current",
+          "context_window": 1000000,
+          "max_output_tokens": 128000,
+          "context_verified": true,
+          "reasoning": true,
+          "tool_calling": true,
+          "structured_outputs": true,
+          "released": "2026-11-09",
+          "pricing": {
+            "input": 8.0,
+            "output": 40.0,
+            "cached_input": 0.2,
+            "cache_write": 10.0
+          }
+        },
+        {
+          "id": "claude-opus-5-5",
+          "display_name": "Claude Opus 5.5",
+          "tier": "flagship",
+          "status": "current",
+          "context_window": 1000000,
+          "max_output_tokens": 128000,
+          "context_verified": true,
+          "reasoning": true,
+          "tool_calling": true,
+          "structured_outputs": true,
+          "released": "2026-09-21",
+          "pricing": {
+            "input": 4.0,
+            "output": 20.0,
+            "cached_input": 0.2,
+            "cache_write": 5.0
+          }
+        },
+        {
+          "id": "claude-sonnet-5-5",
+          "display_name": "Claude Sonnet 5.5",
+          "tier": "balanced",
+          "status": "current",
+          "context_window": 1000000,
+          "max_output_tokens": 128000,
+          "context_verified": true,
+          "reasoning": true,
+          "tool_calling": true,
+          "structured_outputs": true,
+          "released": "2026-09-28",
+          "pricing": {
+            "input": 2.0,
+            "output": 10.0,
+            "cached_input": 0.1,
+            "cache_write": 2.5
+          }
+        },
+        {
+          "id": "claude-haiku-5-5",
+          "display_name": "Claude Haiku 5.5",
+          "tier": "fast",
+          "status": "current",
+          "context_window": 1000000,
+          "max_output_tokens": 128000,
+          "context_verified": true,
+          "reasoning": true,
+          "tool_calling": true,
+          "structured_outputs": true,
+          "released": "2026-10-07",
+          "pricing": {
+            "input": 0.1,
+            "output": 0.5,
+            "cached_input": 0.01,
+            "cache_write": 0.125,
+            "long_context": {
+              "threshold_tokens": 100000,
+              "input": 0.5,
+              "output": 2.5,
+              "cached_input": 0.05,
+              "cache_write": 0.625
+            }
+          }
+        },
+        {
+          "id": "claude-fable-5-1",
+          "display_name": "Claude Fable 5.1",
+          "tier": "frontier",
+          "status": "previous",
+          "context_window": 1000000,
+          "max_output_tokens": 128000,
+          "context_verified": true,
+          "reasoning": true,
+          "tool_calling": true,
+          "structured_outputs": true,
+          "released": "2026-08-28",
+          "pricing": {
+            "input": 10.0,
+            "output": 50.0,
+            "cached_input": 1.0,
+            "cache_write": 12.5
+          }
+        },
+        {
+          "id": "claude-opus-5",
+          "display_name": "Claude Opus 5",
+          "tier": "flagship",
+          "status": "previous",
+          "context_window": 1000000,
+          "max_output_tokens": 128000,
+          "context_verified": true,
+          "reasoning": true,
+          "tool_calling": true,
+          "structured_outputs": true,
+          "released": "2026-07-24",
+          "pricing": {
+            "input": 5.0,
+            "output": 25.0,
+            "cached_input": 0.5,
+            "cache_write": 6.25
+          }
+        },
+        {
+          "id": "claude-sonnet-5",
+          "display_name": "Claude Sonnet 5",
+          "tier": "balanced",
+          "status": "previous",
+          "context_window": 1000000,
+          "max_output_tokens": 128000,
+          "context_verified": true,
+          "reasoning": true,
+          "tool_calling": true,
+          "structured_outputs": true,
+          "released": "2026-06-29",
+          "pricing": {
+            "input": 2.0,
+            "output": 10.0,
+            "cached_input": 0.2,
+            "cache_write": 2.5
+          }
+        },
+        {
+          "id": "claude-opus-4-8",
+          "display_name": "Claude Opus 4.8",
+          "tier": "flagship",
+          "status": "legacy",
+          "context_window": 1000000,
+          "max_output_tokens": 128000,
+          "context_verified": true,
+          "reasoning": true,
+          "tool_calling": true,
+          "structured_outputs": true,
+          "released": "2026-05-28",
+          "pricing": {
+            "input": 5.0,
+            "output": 25.0,
+            "cached_input": 0.5,
+            "cache_write": 6.25
+          }
+        },
+        {
+          "id": "claude-sonnet-4-6",
+          "display_name": "Claude Sonnet 4.6",
+          "tier": "balanced",
+          "status": "legacy",
+          "context_window": 1000000,
+          "max_output_tokens": 128000,
+          "context_verified": true,
+          "reasoning": true,
+          "tool_calling": true,
+          "structured_outputs": true,
+          "released": "2026-02-17",
+          "pricing": {
+            "input": 3.0,
+            "output": 15.0,
+            "cached_input": 0.3,
+            "cache_write": 3.75
+          }
+        },
+        {
+          "id": "claude-haiku-4-5",
+          "display_name": "Claude Haiku 4.5",
+          "tier": "fast",
+          "status": "legacy",
+          "context_window": 200000,
+          "max_output_tokens": 64000,
+          "context_verified": true,
+          "reasoning": true,
+          "tool_calling": true,
+          "structured_outputs": true,
+          "released": "2025-10-15",
+          "pricing": {
+            "input": 1.0,
+            "output": 5.0,
+            "cached_input": 0.1,
+            "cache_write": 1.25
+          }
+        }
+      ]
+    },
+    "openai": {
+      "display_name": "OpenAI",
+      "api_key_setting": "OPENAI_API_KEY",
+      "recommended": {
+        "agentic": "gpt-6.1-sol",
+        "batch": "gpt-6.1-sol",
+        "toc": "gpt-6-luna"
+      },
+      "models": [
+        {
+          "id": "gpt-6.2-astra",
+          "display_name": "GPT-6.2 Astra",
+          "tier": "flagship",
+          "status": "current",
+          "context_window": 1050000,
+          "max_input_tokens": 922000,
+          "max_output_tokens": 128000,
+          "context_verified": true,
+          "reasoning": true,
+          "tool_calling": true,
+          "structured_outputs": true,
+          "released": "2026-11-17",
+          "pricing": {
+            "input": 8.0,
+            "output": 40.0,
+            "cached_input": 0.4,
+            "long_context": {
+              "threshold_tokens": 272000,
+              "input": 16.0,
+              "output": 60.0,
+              "cached_input": 0.8
+            }
+          }
+        },
+        {
+          "id": "gpt-6.2-sol",
+          "display_name": "GPT-6.2 Sol",
+          "tier": "balanced",
+          "status": "current",
+          "context_window": 1050000,
+          "max_input_tokens": 922000,
+          "max_output_tokens": 128000,
+          "context_verified": true,
+          "reasoning": true,
+          "tool_calling": true,
+          "structured_outputs": true,
+          "released": "2026-11-17",
+          "pricing": {
+            "input": 2.0,
+            "output": 10.0,
+            "cached_input": 0.1,
+            "long_context": {
+              "threshold_tokens": 272000,
+              "input": 4.0,
+              "output": 15.0,
+              "cached_input": 0.2
+            }
+          }
+        },
+        {
+          "id": "gpt-6.1-terra",
+          "display_name": "GPT-6.1 Terra",
+          "tier": "fast",
+          "status": "current",
+          "context_window": 1050000,
+          "max_output_tokens": 128000,
+          "context_verified": true,
+          "reasoning": true,
+          "tool_calling": true,
+          "structured_outputs": true,
+          "released": "2026-10-26",
+          "pricing": {
+            "input": 1.0,
+            "output": 5.0,
+            "cached_input": 0.05,
+            "cache_write": 1.25,
+            "long_context": {
+              "threshold_tokens": 272000,
+              "input": 2.0,
+              "output": 7.5,
+              "cached_input": 0.1
+            }
+          },
+          "knowledge_cutoff": "2026-06-01",
+          "max_input_tokens": 922000,
+          "notes": "Tool calls with reasoning go through the Responses API."
+        },
+        {
+          "id": "gpt-6-luna",
+          "display_name": "GPT-6 Luna",
+          "tier": "economy",
+          "status": "current",
+          "context_window": 1050000,
+          "max_output_tokens": 128000,
+          "context_verified": true,
+          "reasoning": true,
+          "tool_calling": true,
+          "structured_outputs": true,
+          "pricing": {
+            "input": 0.1,
+            "output": 0.5,
+            "cached_input": 0.01,
+            "cache_write": 0.125,
+            "long_context": {
+              "threshold_tokens": 272000,
+              "input": 0.2,
+              "output": 0.75,
+              "cached_input": 0.02
+            }
+          },
+          "knowledge_cutoff": "2026-05-18",
+          "max_input_tokens": 922000,
+          "notes": "Tool calls with reasoning go through the Responses API."
+        },
+        {
+          "id": "gpt-6.1-sol",
+          "display_name": "GPT-6.1 Sol",
+          "tier": "balanced",
+          "status": "current",
+          "context_window": 1050000,
+          "max_output_tokens": 128000,
+          "context_verified": true,
+          "reasoning": true,
+          "tool_calling": true,
+          "structured_outputs": true,
+          "pricing": {
+            "input": 2.0,
+            "output": 10.0,
+            "cached_input": 0.1,
+            "cache_write": 2.5,
+            "long_context": {
+              "threshold_tokens": 272000,
+              "input": 4.0,
+              "output": 15.0,
+              "cached_input": 0.2
+            }
+          },
+          "knowledge_cutoff": "2026-04-30",
+          "max_input_tokens": 922000,
+          "notes": "Tool calls with reasoning go through the Responses API."
+        },
+        {
+          "id": "gpt-5.6-sol",
+          "display_name": "GPT-5.6 Sol",
+          "tier": "balanced",
+          "status": "previous",
+          "context_window": 1050000,
+          "max_output_tokens": 128000,
+          "context_verified": false,
+          "reasoning": true,
+          "tool_calling": true,
+          "structured_outputs": true,
+          "pricing": {
+            "input": 4.0,
+            "output": 20.0,
+            "cached_input": 0.4,
+            "long_context": {
+              "threshold_tokens": 272000,
+              "input": 8.0,
+              "output": 30.0,
+              "cached_input": 0.8
+            }
+          }
+        },
+        {
+          "id": "gpt-5.5",
+          "display_name": "GPT-5.5",
+          "tier": "flagship",
+          "status": "previous",
+          "context_window": 1050000,
+          "max_output_tokens": 128000,
+          "context_verified": false,
+          "reasoning": true,
+          "tool_calling": true,
+          "structured_outputs": true,
+          "pricing": {
+            "input": 5.0,
+            "output": 30.0,
+            "cached_input": 0.5,
+            "long_context": {
+              "threshold_tokens": 272000,
+              "input": 10.0,
+              "output": 45.0,
+              "cached_input": 1.0
+            }
+          }
+        },
+        {
+          "id": "gpt-5.4",
+          "display_name": "GPT-5.4",
+          "tier": "balanced",
+          "status": "legacy",
+          "context_window": 1050000,
+          "max_output_tokens": 128000,
+          "context_verified": false,
+          "reasoning": true,
+          "tool_calling": true,
+          "structured_outputs": true,
+          "pricing": {
+            "input": 2.5,
+            "output": 15.0,
+            "cached_input": 0.25,
+            "long_context": {
+              "threshold_tokens": 272000,
+              "input": 5.0,
+              "output": 22.5,
+              "cached_input": 0.5
+            }
+          }
+        },
+        {
+          "id": "gpt-5.4-mini",
+          "display_name": "GPT-5.4 mini",
+          "tier": "fast",
+          "status": "legacy",
+          "context_window": 400000,
+          "max_output_tokens": 128000,
+          "context_verified": false,
+          "reasoning": true,
+          "tool_calling": true,
+          "structured_outputs": true,
+          "pricing": {
+            "input": 0.75,
+            "output": 4.5,
+            "cached_input": 0.075
+          }
+        },
+        {
+          "id": "gpt-5-mini",
+          "display_name": "GPT-5 mini",
+          "tier": "economy",
+          "status": "legacy",
+          "context_window": 400000,
+          "max_input_tokens": 272000,
+          "max_output_tokens": 128000,
+          "context_verified": true,
+          "reasoning": true,
+          "tool_calling": true,
+          "structured_outputs": true,
+          "pricing": {
+            "input": 0.25,
+            "output": 2.0,
+            "cached_input": 0.025
+          }
+        },
+        {
+          "id": "gpt-4.1",
+          "display_name": "GPT-4.1",
+          "tier": "balanced",
+          "status": "legacy",
+          "context_window": 1047576,
+          "max_output_tokens": 32768,
+          "context_verified": true,
+          "reasoning": false,
+          "tool_calling": true,
+          "structured_outputs": true,
+          "pricing": {
+            "input": 2.0,
+            "output": 8.0,
+            "cached_input": 0.5
+          }
+        }
+      ],
+      "account_models": [
+        "gpt-6.1-sol",
+        "gpt-6.1-terra",
+        "gpt-6-luna"
+      ]
+    },
+    "gemini": {
+      "display_name": "Google Gemini",
+      "api_key_setting": "GEMINI_API_KEY",
+      "recommended": {
+        "agentic": "gemini-4-argon",
+        "batch": "gemini-4-argon",
+        "toc": "gemini-3.8-flash"
+      },
+      "models": [
+        {
+          "id": "gemini-4-carbon",
+          "display_name": "Gemini 4 Carbon",
+          "tier": "flagship",
+          "status": "current",
+          "context_window": 1048576,
+          "max_output_tokens": 65536,
+          "context_verified": true,
+          "reasoning": true,
+          "tool_calling": true,
+          "structured_outputs": true,
+          "pricing": {
+            "input": 2.0,
+            "output": 10.0,
+            "cached_input": 0.1
+          },
+          "scheduled_pricing": [
+            {
+              "effective": "2026-12-01",
+              "input": 4.0,
+              "output": 20.0,
+              "cached_input": 0.2
+            }
+          ]
+        },
+        {
+          "id": "gemini-4-argon",
+          "display_name": "Gemini 4 Argon",
+          "tier": "balanced",
+          "status": "current",
+          "context_window": 1048576,
+          "max_output_tokens": 65536,
+          "context_verified": true,
+          "reasoning": true,
+          "tool_calling": true,
+          "structured_outputs": true,
+          "pricing": {
+            "input": 2.0,
+            "output": 10.0,
+            "cached_input": 0.1
+          },
+          "scheduled_pricing": [
+            {
+              "effective": "2026-12-01",
+              "input": 4.0,
+              "output": 20.0,
+              "cached_input": 0.2
+            }
+          ]
+        },
+        {
+          "id": "gemini-4-hydrogen",
+          "display_name": "Gemini 4 Hydrogen",
+          "tier": "fast",
+          "status": "current",
+          "context_window": 1048576,
+          "max_output_tokens": 65536,
+          "context_verified": true,
+          "reasoning": true,
+          "tool_calling": true,
+          "structured_outputs": true,
+          "released": "2026-11-12",
+          "pricing": {
+            "input": 1.5,
+            "output": 7.5,
+            "cached_input": 0.075
+          }
+        },
+        {
+          "id": "gemini-3.8-flash",
+          "display_name": "Gemini 3.8 Flash",
+          "tier": "fast",
+          "status": "current",
+          "context_window": 1048576,
+          "max_output_tokens": 65536,
+          "context_verified": false,
+          "reasoning": true,
+          "tool_calling": true,
+          "structured_outputs": true,
+          "pricing": {
+            "input": 0.75,
+            "output": 3.75,
+            "cached_input": 0.075
+          },
+          "scheduled_pricing": [
+            {
+              "effective": "2027-01-01",
+              "input": 1.5,
+              "output": 7.5,
+              "cached_input": 0.15
+            }
+          ]
+        },
+        {
+          "id": "gemini-3.5-flash-lite",
+          "display_name": "Gemini 3.5 Flash-Lite",
+          "tier": "economy",
+          "status": "current",
+          "context_window": 1048576,
+          "max_output_tokens": 65536,
+          "context_verified": false,
+          "reasoning": true,
+          "tool_calling": true,
+          "structured_outputs": true,
+          "pricing": {
+            "input": 0.3,
+            "output": 2.5,
+            "cached_input": 0.03
+          }
+        },
+        {
+          "id": "gemini-3.1-pro-preview",
+          "display_name": "Gemini 3.1 Pro (preview)",
+          "tier": "flagship",
+          "status": "preview",
+          "context_window": 1048576,
+          "max_output_tokens": 65536,
+          "context_verified": false,
+          "reasoning": true,
+          "tool_calling": true,
+          "structured_outputs": true,
+          "pricing": {
+            "input": 2.0,
+            "output": 12.0,
+            "cached_input": 0.2,
+            "long_context": {
+              "threshold_tokens": 200000,
+              "input": 4.0,
+              "output": 18.0,
+              "cached_input": 0.4
+            }
+          }
+        },
+        {
+          "id": "gemini-2.5-flash",
+          "display_name": "Gemini 2.5 Flash",
+          "tier": "fast",
+          "status": "deprecated",
+          "context_window": 1048576,
+          "max_output_tokens": 65536,
+          "context_verified": true,
+          "reasoning": true,
+          "tool_calling": true,
+          "structured_outputs": true,
+          "notes": "Deprecated: from 2026-12-01 requests are routed to gemini-3.5-flash-lite.",
+          "pricing": {
+            "input": 0.3,
+            "output": 2.5,
+            "cached_input": 0.03
+          }
+        }
+      ]
+    },
+    "ollama": {
+      "display_name": "Local (Ollama)",
+      "api_key_setting": null,
+      "local": true,
+      "recommended": {
+        "agentic": "qwen3.5:4b",
+        "batch": "qwen3.5:4b",
+        "toc": "qwen3.5:4b"
+      },
+      "models": [
+        {
+          "id": "qwen3.5:4b",
+          "display_name": "Qwen3.5 4B (local)",
+          "tier": "local",
+          "status": "current",
+          "context_window": 262144,
+          "max_output_tokens": 32768,
+          "context_verified": false,
+          "reasoning": true,
+          "tool_calling": true,
+          "structured_outputs": true,
+          "licence": "Apache-2.0",
+          "notes": "The usable window is OLLAMA_NUM_CTX, which is far smaller than the native window.",
+          "pricing": {
+            "input": 0.0,
+            "output": 0.0,
+            "cached_input": 0.0
+          }
+        }
+      ]
+    }
+  },
+  "embedding_models": {
+    "ollama": [
+      {
+        "id": "all-minilm:33m",
+        "family": "all-MiniLM-L12-v2",
+        "dimensions": 384,
+        "max_input_tokens": 512,
+        "size_mb": 67,
+        "licence": "Apache-2.0",
+        "query_prefix": "",
+        "document_prefix": "",
+        "pricing": {
+          "input": 0.0
+        },
+        "notes": "Inputs beyond about 256 word pieces carry little weight; keep EXTRACT_RAG_CHUNK_TOKENS near 256 with it."
+      },
+      {
+        "id": "all-minilm:22m",
+        "family": "all-MiniLM-L6-v2",
+        "dimensions": 384,
+        "max_input_tokens": 512,
+        "size_mb": 46,
+        "licence": "Apache-2.0",
+        "query_prefix": "",
+        "document_prefix": "",
+        "pricing": {
+          "input": 0.0
+        }
+      },
+      {
+        "id": "qwen3-embedding:0.6b",
+        "dimensions": 1024,
+        "max_input_tokens": 32768,
+        "licence": "Apache-2.0",
+        "query_prefix": "Instruct: Given a question about a document, retrieve the passages that answer it\nQuery: ",
+        "document_prefix": "",
+        "pricing": {
+          "input": 0.0
+        },
+        "size_mb": 639
+      },
+      {
+        "id": "nomic-embed-text",
+        "dimensions": 768,
+        "max_input_tokens": 8192,
+        "licence": "Apache-2.0",
+        "query_prefix": "search_query: ",
+        "document_prefix": "search_document: ",
+        "pricing": {
+          "input": 0.0
+        },
+        "size_mb": 274
+      }
+    ],
+    "openai": [
+      {
+        "id": "text-embedding-3-small",
+        "dimensions": 1536,
+        "max_input_tokens": 8191,
+        "query_prefix": "",
+        "document_prefix": "",
+        "pricing": {
+          "input": 0.02
+        }
+      },
+      {
+        "id": "text-embedding-3-large",
+        "dimensions": 3072,
+        "max_input_tokens": 8191,
+        "query_prefix": "",
+        "document_prefix": "",
+        "pricing": {
+          "input": 0.13
+        }
+      }
+    ]
+  }
+}

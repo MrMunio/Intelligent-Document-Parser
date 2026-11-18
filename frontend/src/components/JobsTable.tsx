@@ -3,9 +3,12 @@ import { Link } from "react-router-dom";
 import { formatBytes, formatDuration, formatRelative } from "../lib/format";
 import { JOB_TYPE_LABELS, type Job } from "../lib/types";
 import { cx, StatusBadge } from "./ui";
+import { formatCost } from "./UsageSummary";
 
 export function jobPath(job: Job): string {
-  return job.job_type === "PHI" ? `/phi/jobs/${job.job_id}` : `/parse/jobs/${job.job_id}`;
+  if (job.job_type === "PHI") return `/phi/jobs/${job.job_id}`;
+  if (job.job_type === "EXTRACT") return `/extract/jobs/${job.job_id}`;
+  return `/parse/jobs/${job.job_id}`;
 }
 
 function outcome(job: Job): string {
@@ -13,6 +16,10 @@ function outcome(job: Job): string {
   if (job.job_type === "PHI") {
     const n = job.stats.entities ?? 0;
     return `${n} redaction${n === 1 ? "" : "s"}`;
+  }
+  if (job.job_type === "EXTRACT") {
+    const found = job.stats.found ?? 0;
+    return `${found} of ${job.stats.fields ?? 0} fields`;
   }
   const pages = job.stats.pages;
   return pages ? `${pages} page${pages === 1 ? "" : "s"}` : "";
@@ -39,6 +46,7 @@ export function JobsTable({
             <th>Status</th>
             <th>Result</th>
             <th>Duration</th>
+            <th>Model cost</th>
             {showOwner && <th>Submitted by</th>}
             <th>Submitted</th>
             {onDelete && <th className="w-10" />}
@@ -62,6 +70,7 @@ export function JobsTable({
               </td>
               <td className="whitespace-nowrap text-ink-600">{outcome(job)}</td>
               <td className="whitespace-nowrap tabular-nums text-ink-600">{formatDuration(job.duration_ms)}</td>
+              <td className="whitespace-nowrap tabular-nums text-ink-600">{job.usage ? (job.usage.total.calls ? formatCost(job.usage.total) : "none") : ""}</td>
               {showOwner && <td className="text-ink-600">{job.owner_email ?? ""}</td>}
               <td className="whitespace-nowrap text-ink-600">{formatRelative(job.created_at)}</td>
               {onDelete && (

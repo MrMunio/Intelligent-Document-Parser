@@ -112,8 +112,10 @@ services:
     restart: unless-stopped
     environment:
       OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-30m}
-      OLLAMA_NUM_PARALLEL: ${OLLAMA_NUM_PARALLEL:-4}
-      OLLAMA_MAX_LOADED_MODELS: "1"
+      # The KV cache is allocated for every parallel slot at OLLAMA_NUM_CTX tokens: fewer slots, longer context.
+      OLLAMA_NUM_PARALLEL: ${OLLAMA_NUM_PARALLEL:-2}
+      # Chat model and embedding model stay loaded together (no reload on every agent turn).
+      OLLAMA_MAX_LOADED_MODELS: ${OLLAMA_MAX_LOADED_MODELS:-2}
     deploy:
       resources:
         reservations:

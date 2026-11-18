@@ -6,6 +6,7 @@ import { useAuth } from "./lib/auth";
 import type { Service } from "./lib/types";
 import Account from "./pages/Account";
 import AdminAudit from "./pages/AdminAudit";
+import AdminEngines from "./pages/AdminEngines";
 import AdminSystem from "./pages/AdminSystem";
 import AdminUsers from "./pages/AdminUsers";
 import ApiAccess from "./pages/ApiAccess";
@@ -13,12 +14,14 @@ import Jobs from "./pages/Jobs";
 import Login from "./pages/Login";
 import NotAllowed from "./pages/NotAllowed";
 import Overview from "./pages/Overview";
+import ExtractNew from "./pages/ExtractNew";
 import ParseNew from "./pages/ParseNew";
 import PhiNew from "./pages/PhiNew";
 
 // The review screens carry the PDF, Word and markdown renderers, so they load on first use.
 const PhiJob = lazy(() => import("./pages/PhiJob"));
 const ParseJob = lazy(() => import("./pages/ParseJob"));
+const ExtractJob = lazy(() => import("./pages/ExtractJob"));
 
 function RequireAuth() {
   const { user, loading } = useAuth();
@@ -62,12 +65,17 @@ export default function App() {
             <Route path="parse" element={<ParseNew />} />
             <Route path="parse/jobs/:jobId" element={<ParseJob />} />
           </Route>
+          <Route element={<RequireService service="extract" />}>
+            <Route path="extract" element={<ExtractNew />} />
+            <Route path="extract/jobs/:jobId" element={<ExtractJob />} />
+          </Route>
           <Route path="jobs" element={<Jobs />} />
           <Route path="api-access" element={<ApiAccess />} />
           <Route path="account" element={<Account />} />
           <Route element={<RequireAdmin />}>
             <Route path="admin/users" element={<AdminUsers />} />
             <Route path="admin/system" element={<AdminSystem />} />
+            <Route path="admin/engines" element={<AdminEngines />} />
             <Route path="admin/audit" element={<AdminAudit />} />
           </Route>
           <Route path="*" element={<NotAllowed notFound />} />

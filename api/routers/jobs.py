@@ -40,7 +40,7 @@ def get_job_for(principal: Principal, job_id: str, db: Session) -> JobRequest:
 
 @router.get("", response_model=JobList, summary="List jobs (your own, or everyone's for administrators)")
 def list_jobs(
-    job_type: Optional[str] = Query(None, description="PHI, PARSE or OCR"),
+    job_type: Optional[str] = Query(None, description="PHI, PARSE, OCR or EXTRACT"),
     status: Optional[str] = Query(None, description="PENDING, PROCESSING, COMPLETED or FAILED"),
     scope: str = Query("mine", description="'mine' or 'all' (administrators only)"),
     page: int = Query(1, ge=1),

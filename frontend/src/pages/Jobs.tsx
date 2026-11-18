@@ -68,6 +68,7 @@ export default function Jobs() {
           {can("phi") && <option value="PHI">PHI redaction</option>}
           {can("parse") && <option value="PARSE">Document parsing</option>}
           {can("parse") && <option value="OCR">Text extraction</option>}
+          {can("extract") && <option value="EXTRACT">Data extraction</option>}
         </select>
         <select
           className="input w-44"

@@ -116,6 +116,22 @@ class RedactTextRequest(BaseModel):
     use_pattern_detectors: bool = True
 
 
+# ---- Data extraction ----------------------------------------------------------
+
+class ValidateSpecRequest(BaseModel):
+    spec: Any = Field(description="The extraction spec: a JSON object with 'properties' (or a JSON string of it).")
+
+
+class ExtractTextRequest(BaseModel):
+    text: str = Field(min_length=1, description="The document text.")
+    spec: Any = Field(description="The extraction spec: a JSON object with 'properties' (or a JSON string of it).")
+    approach: str = Field(default="agentic", description="'batch' or 'agentic'.")
+    model: Optional[str] = Field(default=None, description="'provider:model' from GET /extract/options; default: configured engine.")
+    instructions: Optional[str] = Field(default=None, max_length=4000)
+    context_window: Optional[int] = Field(default=None, description="Cap on the usable context window in tokens (min 16000).")
+    file_name: Optional[str] = Field(default=None, max_length=200)
+
+
 # ---- Jobs ---------------------------------------------------------------------
 
 class JobOut(BaseModel):
@@ -139,6 +155,8 @@ class JobOut(BaseModel):
     result_media_type: Optional[str] = None
     result_available: bool = False
     links: dict[str, str] = Field(default_factory=dict)
+    usage: Optional[dict[str, Any]] = Field(default=None, description="Language model calls, tokens and cost in USD "
+                                                                     "for this job: total and by_model")
     # Present on single-job responses only
     result_data: Optional[Any] = None
     result_markdown: Optional[str] = None

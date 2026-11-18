@@ -7,7 +7,7 @@ import { useAuth } from "../lib/auth";
 import { formatDate, formatRelative } from "../lib/format";
 import { SERVICE_LABELS, type ApiKey, type Service } from "../lib/types";
 
-type Example = "redact" | "text" | "async" | "parse";
+type Example = "redact" | "text" | "async" | "parse" | "extract";
 
 function examples(base: string): Record<Example, { title: string; note: string; code: string }> {
   return {
@@ -57,6 +57,23 @@ curl "${base}/api/v1/jobs/<job_id>/metadata" -H "X-API-Key: $IDP_API_KEY" -OJ`,
   -H "X-API-Key: $IDP_API_KEY" \\
   -F "file=@report.pdf" -F "mode=structured"`,
     },
+    extract: {
+      title: "Extract to JSON",
+      note: "Send your own spec with every request: each key needs a type and a description. Invalid specs are rejected with 422 and a list of problems. Check a spec first with POST /api/v1/extract/validate-spec.",
+      code: `curl -X POST "${base}/api/v1/extract/jobs" \\
+  -H "X-API-Key: $IDP_API_KEY" \\
+  -F "file=@provider-agreement.pdf" \\
+  -F "approach=agentic" \\
+  -F 'spec={"properties": {
+        "effective_date": {"type": "date", "description": "Date the agreement takes effect"},
+        "termination_notice_days": {"type": "integer", "description": "Days of notice to terminate without cause"},
+        "fee_schedule": {"type": "array", "description": "Every service rate",
+          "items": {"type": "object", "properties": {
+            "code": {"type": "string", "description": "Procedure code"},
+            "rate_usd": {"type": "number", "description": "Rate in US dollars"}}}}}}'
+# Poll GET /api/v1/jobs/<job_id>; result_data.data holds the JSON, result_data.fields the evidence pages.
+# GET /api/v1/jobs/<job_id>/file downloads the JSON. Approaches and engines: GET /api/v1/extract/options`,
+    },
   };
 }
 
@@ -82,7 +99,7 @@ export default function ApiAccess() {
   const base = window.location.origin;
   const samples = useMemo(() => examples(base), [base]);
   const visibleExamples = (Object.keys(samples) as Example[]).filter((key) =>
-    key === "parse" ? user?.services.includes("parse") : user?.services.includes("phi"),
+    key === "parse" ? user?.services.includes("parse") : key === "extract" ? user?.services.includes("extract") : user?.services.includes("phi"),
   );
   const current = visibleExamples.includes(example) ? example : visibleExamples[0];
 

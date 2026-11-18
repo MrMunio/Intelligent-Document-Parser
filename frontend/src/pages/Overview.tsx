@@ -23,6 +23,14 @@ const SERVICES = [
     formats: "PDF and images",
     action: "Parse a document",
   },
+  {
+    service: "extract" as const,
+    to: "/extract",
+    title: "Data Extraction",
+    text: "Turn long documents into JSON that follows your own spec: every field with its type and description. An agent navigates the table of contents and indexed text, so documents far larger than a model context are handled.",
+    formats: "PDF, DOCX, images and text files",
+    action: "Extract data",
+  },
 ];
 
 export default function Overview() {

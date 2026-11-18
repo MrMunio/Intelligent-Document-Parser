@@ -78,3 +78,4 @@ def classify(file_name: str, head: bytes = b"") -> Optional[str]:
 
 PHI_ACCEPT_HINT = "PDF, DOCX, images (PNG, JPG, TIFF, BMP, WEBP) and any text-based file (TXT, MD, CSV, JSON, XML, HTML, YAML, LOG)"
 PARSE_ACCEPT_HINT = "PDF and images (PNG, JPG, TIFF, BMP, WEBP)"
+EXTRACT_ACCEPT_HINT = "PDF, DOCX, images (PNG, JPG, TIFF, BMP, WEBP) and text-based files (TXT, MD, CSV, JSON, XML, HTML)"

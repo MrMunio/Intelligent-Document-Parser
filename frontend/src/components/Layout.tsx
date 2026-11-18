@@ -1,4 +1,4 @@
-import { Activity, FileText, History, KeyRound, LayoutGrid, LogOut, ScrollText, ShieldCheck, UserCog, Users } from "lucide-react";
+import { Activity, Braces, Cpu, FileText, History, KeyRound, LayoutGrid, LogOut, ScrollText, ShieldCheck, UserCog, Users } from "lucide-react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { Suspense, type ComponentType } from "react";
 import { useAuth } from "../lib/auth";
@@ -43,6 +43,7 @@ export default function Layout() {
   const workspace: NavItem[] = [{ to: "/", label: "Overview", icon: LayoutGrid, end: true }];
   if (can("phi")) workspace.push({ to: "/phi", label: "PHI Redaction", icon: ShieldCheck });
   if (can("parse")) workspace.push({ to: "/parse", label: "Document Parsing", icon: FileText });
+  if (can("extract")) workspace.push({ to: "/extract", label: "Data Extraction", icon: Braces });
   workspace.push({ to: "/jobs", label: "Job History", icon: History });
 
   const integrate: NavItem[] = [{ to: "/api-access", label: "API Access", icon: KeyRound }];
@@ -50,6 +51,7 @@ export default function Layout() {
     ? [
         { to: "/admin/users", label: "Users", icon: Users },
         { to: "/admin/system", label: "System Status", icon: Activity },
+        { to: "/admin/engines", label: "AI Engines", icon: Cpu },
         { to: "/admin/audit", label: "Audit Log", icon: ScrollText },
       ]
     : [];

@@ -6,6 +6,7 @@ import { MarkdownView } from "../components/viewers";
 import { Alert, Button, CopyButton, Page, PageHeader, Spinner, StatusBadge, Stepper, Tabs, useToast } from "../components/ui";
 import { ApiError, downloadFile } from "../lib/api";
 import { formatDuration } from "../lib/format";
+import { formatCost, UsageSummary } from "../components/UsageSummary";
 import { useJob } from "../lib/hooks";
 import type { Job } from "../lib/types";
 import { PARSE_STEPS } from "./ParseNew";
@@ -24,7 +25,7 @@ function saveText(name: string, text: string, type: string) {
 function Review({ job }: { job: Job }) {
   const toast = useToast();
   const structured = job.job_type === "PARSE";
-  const [tab, setTab] = useState<"rendered" | "markdown" | "json">(structured ? "rendered" : "markdown");
+  const [tab, setTab] = useState<"rendered" | "markdown" | "json" | "usage">(structured ? "rendered" : "markdown");
   const markdown = job.result_markdown ?? "";
   const json = useMemo(() => JSON.stringify(job.result_data ?? {}, null, 2), [job.result_data]);
   const stem = (job.file_name ?? "document").replace(/\.[^.]+$/, "");
@@ -34,6 +35,7 @@ function Review({ job }: { job: Job }) {
     stats.chunks ? `${stats.chunks} content blocks` : null,
     stats.lines ? `${stats.lines} text lines` : null,
     job.duration_ms ? formatDuration(job.duration_ms) : null,
+    job.usage?.total.calls ? `${job.usage.total.calls} model call${job.usage.total.calls === 1 ? "" : "s"}, ${formatCost(job.usage.total)}` : null,
   ].filter(Boolean);
 
   const tabs = structured
@@ -41,10 +43,12 @@ function Review({ job }: { job: Job }) {
         { value: "rendered" as const, label: "Rendered" },
         { value: "markdown" as const, label: "Markdown" },
         { value: "json" as const, label: "JSON" },
+        { value: "usage" as const, label: "Model usage" },
       ]
     : [
         { value: "markdown" as const, label: "Extracted text" },
         { value: "json" as const, label: "JSON with coordinates" },
+        { value: "usage" as const, label: "Model usage" },
       ];
 
   return (
@@ -84,6 +88,14 @@ function Review({ job }: { job: Job }) {
           </div>
         )}
         {tab === "markdown" && <pre className="whitespace-pre-wrap break-words p-6 font-mono text-[12.5px] leading-relaxed text-ink-800">{markdown}</pre>}
+        {tab === "usage" && (
+          <div className="p-6">
+            <UsageSummary
+              usage={job.usage}
+              emptyText={structured ? "No figure descriptions were requested, so no language model was called." : "Text extraction uses OCR only: no language model calls and no token cost."}
+            />
+          </div>
+        )}
         {tab === "json" && <pre className="whitespace-pre-wrap break-words p-6 font-mono text-[11.5px] leading-relaxed text-ink-800">{json}</pre>}
       </div>
     </div>

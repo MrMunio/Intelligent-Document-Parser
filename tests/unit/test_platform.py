@@ -32,8 +32,8 @@ def test_api_keys_are_random_and_only_the_hash_is_kept():
 
 
 @pytest.mark.parametrize("roles, services", [
-    (["document_parser"], {"parse"}), (["phi_redactor"], {"phi"}), (["admin"], {"parse", "phi"}),
-    (["super_admin"], {"parse", "phi"}), (["document_parser", "phi_redactor"], {"parse", "phi"}), ([], set()),
+    (["document_parser"], {"parse"}), (["phi_redactor"], {"phi"}), (["admin"], {"parse", "phi", "extract"}), (["data_extractor"], {"extract"}),
+    (["super_admin"], {"parse", "phi", "extract"}), (["document_parser", "phi_redactor"], {"parse", "phi"}), ([], set()),
 ])
 def test_role_to_service_mapping(roles, services):
     assert services_for_roles(roles) == services

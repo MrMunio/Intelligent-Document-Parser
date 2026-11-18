@@ -17,9 +17,11 @@ export function setSessionExpiredHandler(handler: (() => void) | null) {
 
 export class ApiError extends Error {
   status: number;
-  constructor(status: number, message: string) {
+  detail: unknown;
+  constructor(status: number, message: string, detail?: unknown) {
     super(message);
     this.status = status;
+    this.detail = detail;
   }
 }
 
@@ -33,6 +35,7 @@ function messageFrom(body: unknown, fallback: string): string {
         .join("; ");
     }
     if (detail && typeof detail === "object" && "error" in detail) return String((detail as { error: unknown }).error);
+    if (detail && typeof detail === "object" && "message" in detail) return String((detail as { message: unknown }).message);
   }
   return fallback;
 }
@@ -44,7 +47,8 @@ async function parseError(res: Response): Promise<ApiError> {
   } catch {
     /* not JSON */
   }
-  return new ApiError(res.status, messageFrom(body, `Request failed (${res.status})`));
+  const detail = body && typeof body === "object" && "detail" in body ? (body as { detail: unknown }).detail : undefined;
+  return new ApiError(res.status, messageFrom(body, `Request failed (${res.status})`), detail);
 }
 
 export async function refreshSession(): Promise<boolean> {

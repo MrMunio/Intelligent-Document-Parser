@@ -1,6 +1,6 @@
 # IDP Platform
 
-Intelligent document processing with two services:
+Intelligent document processing with three services:
 
 * **PHI redaction.** Detects protected health information and personal data, plus any custom entity
   types described in the request, and returns the redacted document **in the same format** (PDF, DOCX,
@@ -8,6 +8,11 @@ Intelligent document processing with two services:
   that lists every detection.
 * **Document parsing.** Converts scanned or digital PDFs and images into layout-aware markdown and
   structured JSON, or plain text with word coordinates.
+* **Data extraction.** Turns documents of any length (PDF, DOCX, images, text) into JSON that follows a
+  spec sent with each request: every key with its type and description. Two approaches: **batch**, which
+  reads the document in parts that fit the model context and carries the JSON forward, and **agentic**,
+  where a reasoning agent navigates the table of contents and a hybrid search index, records fields with
+  evidence pages and compacts its own context when it grows.
 
 It ships as a React web app and a standalone REST API. External systems integrate through the API with
 API keys; the web app is one client of that API and is not required.
@@ -48,12 +53,13 @@ External systems ─────────────────────
 
 ## Roles
 
-| Role | PHI redaction | Document parsing | Manage users | System status and audit log |
-|---|---|---|---|---|
-| Super admin | Yes | Yes | All users, including administrators | Yes |
-| Admin | Yes | Yes | Non-administrator users | Yes |
-| PHI redactor | Yes | | | |
-| Document parser | | Yes | | |
+| Role | PHI redaction | Document parsing | Data extraction | Manage users | System status and audit log |
+|---|---|---|---|---|---|
+| Super admin | Yes | Yes | Yes | All users, including administrators | Yes |
+| Admin | Yes | Yes | Yes | Non-administrator users | Yes |
+| PHI redactor | Yes | | | | |
+| Document parser | | Yes | | | |
+| Data extractor | | | Yes | | |
 
 A user can hold several roles. Access is enforced by the API on every request. New users get a
 temporary password and must change it at first sign-in. Changing a user's roles, disabling them or
@@ -66,8 +72,10 @@ selected for the key, and are stored only as a SHA-256 hash.
 
 ## API
 
-All endpoints are under `/api/v1`. The complete reference is at `/api/docs`, and the OpenAPI document at
-`/api/openapi.json` imports directly into Postman.
+All endpoints are under `/api/v1`. **Integrating an external system? Start with the
+[API integration guide](docs/API_GUIDE.md)** (authentication, the job model, every service, errors, usage and
+cost). The complete reference is at `/api/docs`, and the OpenAPI document at `/api/openapi.json` imports
+directly into Postman.
 
 | Endpoint | Purpose |
 |---|---|
@@ -76,6 +84,9 @@ All endpoints are under `/api/v1`. The complete reference is at `/api/docs`, and
 | `POST /phi/redact-text` | JSON in, JSON out, for short text |
 | `GET /phi/entity-types` | Built-in entity types and accepted options |
 | `POST /parse/sync`, `POST /parse/jobs` | Parse a document (`mode=structured` or `mode=ocr`) |
+| `POST /extract/jobs`, `POST /extract/sync` | Extract JSON from a document with your spec (`approach=agentic` or `batch`) |
+| `POST /extract/text` | Extract JSON from a text string (JSON in, JSON out) |
+| `POST /extract/validate-spec`, `GET /extract/options` | Check a spec; list approaches, engines and limits |
 | `GET /jobs`, `GET /jobs/{id}` | List jobs, poll status and progress |
 | `GET /jobs/{id}/file`, `/metadata`, `/markdown` | Download results |
 | `POST /auth/login`, `/auth/refresh`, `GET /auth/me` | Sessions |
@@ -119,9 +130,27 @@ curl -X POST "http://localhost:8000/api/v1/phi/redact" \
 If any part of a document could not be checked by the detector, the job fails rather than returning a
 partially redacted file.
 
+Example: extract key terms from a long contract. An invalid spec is rejected with `422` and every problem
+listed by JSON path, before the document is stored.
+
+```bash
+curl -X POST "http://localhost:8000/api/v1/extract/jobs" \
+  -H "X-API-Key: $IDP_API_KEY" -F "file=@provider-agreement.pdf" -F "approach=agentic" \
+  -F 'spec={"properties": {
+        "effective_date": {"type": "date", "description": "Date the agreement takes effect"},
+        "termination_notice_days": {"type": "integer", "description": "Days of notice to terminate without cause"}}}'
+```
+
 ## LLM engines
 
-Set a primary and an optional fallback engine separately for PHI detection and for figure descriptions.
+Set a primary and an optional fallback engine separately for PHI detection, figure descriptions and data
+extraction. The values in .env are the starting point; administrators then change the engine of every service,
+the index detection mode (rules, LLM or hybrid) and its model, and the embedding model under **Administration, AI
+Engines**, without a restart. For example, to run PHI detection on the local model choose *Local (Ollama)* and
+`qwen3.5:4b` there (or set `PHI_LLM_PROVIDER=ollama` and `PHI_LLM_MODEL=qwen3.5:4b` before the first start) (default Claude Sonnet 5.5 with GPT-6.2 Sol as fallback; a request may pick any engine listed by
+`GET /extract/options`). Context windows, output limits and prices of every known model are kept in
+`shared/model_catalog.json`; the extraction service uses them to size its reads, to compact agent sessions at
+`EXTRACT_CONTEXT_THRESHOLD` of the usable window, and to report the cost of each job.
 Supported: OpenAI, Azure OpenAI, any OpenAI-compatible server (vLLM, LM Studio, Groq and others),
 Anthropic Claude, Google Gemini and Ollama. When the primary fails (bad credentials, outage or exhausted
 retries) the job continues on the fallback, and the primary is retried after five minutes. The System
@@ -157,15 +186,15 @@ Build with `INSTALL_DEV=true` to include the test tools in the images.
 ## Licensing
 
 Every component that handles documents, every model and every service is under a permissive licence; see
-[THIRD_PARTY_LICENSES.md](docs/THIRD_PARTY_LICENSES.md), including the short list of items for legal review.
+[THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md), including the short list of items for legal review.
 Check the build with `python tools/license_audit.py` inside each image.
 
 ## Project structure
 
 ```
 api/        FastAPI app: routers, auth and RBAC dependencies, job service, start-up migrations
-shared/     Settings, database models, LLM engines, file-format rules, PHI catalogue
-worker/     Job runner, OCR, document parsing, PHI redaction (pdf, docx, image, text)
+shared/     Settings, database models, LLM engines, model catalog, file-format rules, PHI catalogue, extraction spec rules
+worker/     Job runner, OCR, document parsing, PHI redaction (pdf, docx, image, text), data extraction
 frontend/   React + Vite + Tailwind web app, served by nginx
 migrations/ Alembic database migrations
 tests/      Unit and integration tests

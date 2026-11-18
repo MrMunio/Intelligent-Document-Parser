@@ -1,8 +1,8 @@
 # IDP Platform architecture
 
 This document describes how the platform is built: the runtime services, the back end, the web app,
-the processing worker, the PHI redaction and document parsing pipelines, the OCR models and the LLM
-engines. Settings named in `CAPITALS` are environment variables read by `shared/config.py`; defaults
+the processing worker, the PHI redaction, document parsing and data extraction pipelines, the OCR models
+and the LLM engines. Settings named in `CAPITALS` are environment variables read by `shared/config.py`; defaults
 are in `.env.example`.
 
 Contents
@@ -16,6 +16,7 @@ Contents
 7. [Processing worker](#7-processing-worker)
 8. [PHI redaction service](#8-phi-redaction-service)
 9. [Document parsing and OCR services](#9-document-parsing-and-ocr-services)
+9a. [Data extraction service](#9a-data-extraction-service)
 10. [OCR models](#10-ocr-models)
 11. [LLM engines](#11-llm-engines)
 12. [Front end (web app)](#12-front-end-web-app)
@@ -69,12 +70,13 @@ Contents
  Shared volume idp_data: uploads (deleted when a job ends) and outputs (FILE_RETENTION_DAYS)
 ```
 
-Two business services are exposed:
+Three business services are exposed:
 
 | Service | Code name | Job type | Purpose |
 |---|---|---|---|
 | PHI redaction | `phi` | `PHI` | Detect PHI/PII and custom entities; return the redacted file in the same format plus a metadata JSON |
 | Document parsing | `parse` | `PARSE` (structured), `OCR` (plain text) | Layout-aware markdown and JSON, or text with word coordinates |
+| Data extraction | `extract` | `EXTRACT` | JSON that follows a spec sent with each request, from documents of any length (batch or agentic approach) |
 
 The API is the product; the web app is one client of it and is optional.
 
@@ -117,7 +119,8 @@ client              api                          postgres         valkey        
   | GET /jobs/{id}/file, /metadata, /markdown       |               |  delete upload|
 ```
 
-* **Synchronous endpoints** (`POST /phi/redact`, `/phi/redact-text`, `/parse/sync`) create the same job
+* **Synchronous endpoints** (`POST /phi/redact`, `/phi/redact-text`, `/parse/sync`, `/extract/sync`,
+  `/extract/text`) create the same job
   and then poll the database until it finishes or `SYNC_TIMEOUT_SECONDS` passes
   (`api/job_service.py: wait_for_job`). `response_format=file` streams the output file directly.
 * **Progress** (`stage`, `percent`, `detail`) is written to the job row by `worker/tasks.py:
@@ -131,7 +134,8 @@ client              api                          postgres         valkey        
 
 ## 4. Back end (API)
 
-FastAPI application in `api/`, sharing models and settings with the worker through `shared/`.
+FastAPI application in `api/`, sharing models and settings with the worker through `shared/`. The contract for
+external integrators is [API_GUIDE.md](API_GUIDE.md).
 
 ### Module map
 
@@ -147,8 +151,10 @@ FastAPI application in `api/`, sharing models and settings with the worker throu
 | `api/routers/api_keys.py` | Create, list and revoke API keys |
 | `api/routers/phi.py` | `entity-types`, `jobs`, `redact`, `redact-text` |
 | `api/routers/parse.py` | `jobs`, `sync` (`mode=structured` or `ocr`) |
+| `api/routers/extract.py` | `options`, `validate-spec`, `jobs`, `sync`, `text`; the spec is validated before the upload is stored |
 | `api/routers/jobs.py` | List, get, delete; download `file`, `metadata`, `markdown` |
 | `api/routers/admin.py` | `/admin/system` (component health, engines, queue depth, 24 h stats), `/admin/audit-logs` |
+| `api/routers/llm_config.py` | `/admin/llm-config`: engine per service (read, change, reset to .env, test) |
 
 ### Endpoint summary
 
@@ -158,6 +164,7 @@ FastAPI application in `api/`, sharing models and settings with the worker throu
 | `GET /auth/me`, `POST /auth/change-password` | Signed-in user |
 | `GET /phi/entity-types`, `POST /phi/jobs`, `/phi/redact`, `/phi/redact-text` | Service `phi` |
 | `POST /parse/jobs`, `/parse/sync` | Service `parse` |
+| `GET /extract/options`, `POST /extract/validate-spec`, `/extract/jobs`, `/extract/sync`, `/extract/text` | Service `extract` |
 | `GET /jobs`, `/jobs/{id}`, `/jobs/{id}/file`, `/metadata`, `/markdown`; `DELETE /jobs/{id}` | Owner of the job, or an admin |
 | `/api-keys` | Signed-in user (session only, not via API key) |
 | `/users` | Admin (super admin for administrator accounts) |
@@ -172,7 +179,11 @@ FastAPI application in `api/`, sharing models and settings with the worker throu
 | `models.py` | ORM models; `ROLE_SERVICES`, `JOB_SERVICE`, `services_for_roles` |
 | `security.py` | bcrypt hashing, password policy, JWT create and decode, API key generation and hashing |
 | `queue.py` | Valkey connection and RQ queues |
-| `llm.py` | LLM provider abstraction, failover, health checks (section 11) |
+| `llm.py` | LLM provider abstraction, tool calling, failover, health checks (section 11) |
+| `model_catalog.py`, `model_catalog.json` | Context window, output limit, prices and capabilities of every known model; usable window and cost |
+| `runtime_config.py` | Engine settings per service: .env defaults, database overrides edited by administrators, validation, seeding |
+| `usage.py` | Token and cost report of a job (same shape for every service), priced from the model catalog |
+| `extract_spec.py` | Extraction spec validation and normalisation, field flattening, type coercion, state merging, strict output schema |
 | `formats.py` | File classification by extension and content, safe file names, media types, accept lists |
 | `phi_catalog.py` | 16 built-in entity types and `normalize_phi_options` (validation of per-request options) |
 | `logger.py` | Logging set-up |
@@ -190,10 +201,11 @@ API start.
 
 | Role | Services | Administration |
 |---|---|---|
-| `super_admin` | `phi`, `parse` | All users, including admins |
-| `admin` | `phi`, `parse` | Non-admin users; system status; audit log |
+| `super_admin` | `phi`, `parse`, `extract` | All users, including admins |
+| `admin` | `phi`, `parse`, `extract` | Non-admin users; system status; audit log |
 | `phi_redactor` | `phi` | none |
 | `document_parser` | `parse` | none |
+| `data_extractor` | `extract` | none |
 
 A user may hold several roles. `services_for_roles` turns roles into allowed services, and every
 route checks them on the server (`require_service`, `require_admin`). The last active super admin
@@ -223,7 +235,9 @@ cannot be removed or demoted.
 * Uploads are streamed to disk with a size cap; file type is checked by content, not only extension.
 * Every security-relevant action is written to `audit_logs` (actor, action, target, IP, detail).
 * Secrets live only in `.env`; nothing is hard-coded.
-* The LLM prompt treats document text as data (prompt-injection guard, rule 6 of `phi_prompt.txt`).
+* The LLM prompt treats document text as data (prompt-injection guard, rule 6 of `phi_prompt.txt`; the same rule
+  in `extract_batch_prompt.txt` and `extract_agent_prompt.txt`). Extraction agent tools are read-only views of the
+  uploaded document plus writes to the job's own result; they reach no network, file system or database.
 
 ## 6. Data model
 
@@ -235,6 +249,7 @@ Schema `idp_schema` in PostgreSQL.
 | `api_keys` | id, user_id, name, prefix, key_hash, scopes, expires_at, revoked_at, last_used_at, created_at |
 | `job_requests` | id, job_type, status, original_file_name, result_data, result_markdown, result_file_url, error_details, user_id, api_key_id, source (web/api), input_format, input_path, file_size, options, progress, stats, result_file_name, result_media_type, created_at, updated_at, started_at, completed_at, duration_ms |
 | `audit_logs` | id, created_at, actor_id, actor_email, action, target_type, target_id, detail, ip_address |
+| `platform_settings` | key (service), value (engine settings JSON), source (`env` or `admin`), updated_by, updated_at |
 
 Files are not stored in the database. The worker writes outputs to
 `DATA_DIR/output/<job_id>/` (or S3 when `STORAGE_MODE=S3`).
@@ -254,7 +269,8 @@ Files are not stored in the database. The worker writes outputs to
 | `worker/engine_parse.py` | PP-StructureV3 document parsing, figure descriptions with the vision LLM |
 | `worker/engine_ocr.py` | Plain OCR output (text, lines, word boxes) |
 | `worker/phi/` | PHI redaction service (section 8) |
-| `worker/prompts/` | `phi_prompt.txt`, `image_prompt.txt`, `chart_prompt.txt` |
+| `worker/extract/` | Data extraction service (section 9a) |
+| `worker/prompts/` | `phi_prompt.txt`, `image_prompt.txt`, `chart_prompt.txt`, `extract_batch_prompt.txt`, `extract_agent_prompt.txt` |
 
 ### Concurrency model
 
@@ -290,7 +306,7 @@ by format and writes the metadata JSON.
                               v
                   detector.Detector.detect
                   - pattern detectors (regex): email, phone, SSN, dates, URLs, IPs ...
-                  - LLM: text split into PHI_CHUNK_WORDS chunks, PHI_LLM_CONCURRENCY in parallel
+                  - LLM: one call per page (split only above the PHI_CHUNK_WORDS ceiling), pages in parallel up to PHI_LLM_CONCURRENCY
                   - fail closed if any chunk could not be checked
                               |
                               v
@@ -371,6 +387,94 @@ are fed one by one from PDFium. Figures and charts are optionally described by t
 **Plain OCR** (`worker/engine_ocr.py`, job type `OCR`, `mode=ocr`): text per page with line and word
 boxes, using the same PP-OCRv6 instance.
 
+## 9a. Data extraction service
+
+Entry point `worker/extract/engine.py: run_extract`. A request carries a document and a **spec**: a JSON object
+whose `properties` define each output key with its `type` and a `description`. The output is JSON in exactly
+that shape, plus the status and evidence pages of every field.
+
+### Spec validation (`shared/extract_spec.py`)
+
+Checked by the API before the upload is stored; all problems are returned together with `422` and their JSON
+path (`POST /extract/validate-spec` runs the same check without a document). Rules: a JSON object with a
+non-empty `properties`; field names are identifiers; every field has a supported type (`string`, `number`,
+`integer`, `boolean`, `object`, `array`, or the alias `date`) and a description of at least 3 characters;
+objects have `properties`, arrays have `items` with a type; `enum` values match the type; no duplicate keys;
+`EXTRACT_SPEC_MIN_FIELDS` to `EXTRACT_SPEC_MAX_FIELDS` fields; nesting up to `EXTRACT_SPEC_MAX_DEPTH`.
+Objects are containers: the units the extractor fills ("fields") are scalars and arrays, addressed by dotted
+paths. Unknown keys are kept as warnings. Model answers are coerced to the declared types (`conform`).
+
+### Approach 1: document batch processing (`batch.py`)
+
+```
+ document text with page markers
+     |  parts of min(EXTRACT_BATCH_CHUNK_TOKENS,
+     |           usable window x EXTRACT_CONTEXT_THRESHOLD - prompt - state - output reserve) tokens
+     v
+ for each part, in order:  schema + JSON so far (state) + part  -->  LLM (structured output)  -->  merge
+     |                      (a null never erases a found value; arrays merged without duplicates)
+     v
+ final state = result; pages where each field was set = evidence
+```
+
+### Approach 2: agentic retrieval (`toc.py`, `chunking.py`, `retrieval.py`, `agent.py`)
+
+```
+ document
+   |-- table of contents: PDF bookmarks > contents page found by rules in the first EXTRACT_TOC_SCAN_PAGES pages
+   |   > contents page found by an LLM scan > outline from headings. Contents pages are structured by the LLM
+   |   (titles, levels, printed pages, document type, summary); printed page numbers are calibrated to physical
+   |   pages (the offset that puts most titles on the page where they appear, then per-entry snapping);
+   |   each entry becomes a section with an id and a page range.
+   |-- chunking strategy by document type: section (map available), tabular (CSV / delimited rows, header
+   |   repeated), page (short forms, images), recursive (paragraph-aware with overlap). Chunks keep pages and section.
+   |-- hybrid index: BM25 + local embeddings (Ollama qwen3-embedding:0.6b), reciprocal rank fusion.
+   |   Without the embedding engine it falls back to keyword ranking and says so in the result.
+   v
+ agent loop (provider-neutral tool calling, any engine)
+   tools: get_document_map, search_document, find_text, read_pages, read_section, read_chunk,
+          record_fields, get_pending_fields, finish
+   state: field values live outside the conversation (record_fields), with pages, confidence and notes
+   context: after every turn, size = prompt + cache reads/writes + reply (as reported by the provider)
+            + tool results about to be sent. At 80 % of the limit the agent is asked to save findings;
+            at EXTRACT_CONTEXT_THRESHOLD x usable window it writes handoff notes, the conversation is dropped
+            and a new session starts from a checkpoint (recorded, not found, pending fields; searches made;
+            pages and sections read; notes). Raw tool output is never carried over.
+   engine failure: the session restarts on the fallback engine from the same checkpoint.
+   tool output: about 15 % of the usable window per result (at most EXTRACT_AGENT_MAX_TOOL_CHARS), so small
+            windows still leave room to think and record
+   loops: a read already done in this session is pointed to; a read from an earlier session is served once more
+          with a reminder to record from it, then refused with a pointer to find_text
+   not_found: accepted only after the field was searched for (words from its description) or its cited pages
+              were examined
+   limits: EXTRACT_AGENT_MAX_TURNS, EXTRACT_AGENT_MAX_SESSIONS; unresolved fields end as not_found.
+```
+
+**Usable window.** `shared/model_catalog.py: usable_window` = the model's input limit from
+`shared/model_catalog.json`, capped by `EXTRACT_CONTEXT_CAP_TOKENS` (default 200000, so long runs do not pay
+for million-token prompts), by `OLLAMA_NUM_CTX` for local models and by the per-request `context_window`.
+
+**Engines.** `EXTRACT_LLM_*` (default Claude Sonnet 5.5, fallback GPT-6.2 Sol). A request may choose any
+`provider:model` listed by `GET /extract/options`: catalog models of providers with credentials, local models
+and the configured engines. `EXTRACT_REASONING_EFFORT` sets the effort. Claude calls use adaptive thinking
+with automatic prompt caching; OpenAI reasoning models use the Responses API (stateless, encrypted reasoning
+replayed); Gemini thought signatures are replayed.
+
+**Result** (`result_data`, schema 1.0): `data` (the JSON), `fields` (path, type, status, value, pages,
+confidence, note), `summary` (found, not found, coverage), `document` (pages, OCR, contents map, chunking,
+retrieval), `engine` (model, windows, threshold, fallback), `usage` (tokens and cost per model, from catalog
+prices), `agent` (sessions, compactions, handoff notes, tool trace) or `batch` (parts), `warnings`, timings.
+`GET /jobs/{id}/file` downloads `data` as `<name>.extracted.json`.
+
+### Model catalog (`shared/model_catalog.json`)
+
+Providers (Anthropic, OpenAI, Gemini, Ollama) with recommended models per purpose, and per model: context
+window, max input and output tokens, prices (input, output, cache read, cache write, long-context tier,
+scheduled changes), capabilities and whether the context window was verified at first-party sources. Also the
+embedding models with their query and document prefixes. The compaction threshold is not in the file; it is
+`EXTRACT_CONTEXT_THRESHOLD`. Update the file when providers release models; `MODEL_CATALOG_PATH` points to
+another copy.
+
 ## 10. OCR models
 
 | Setting | Default | Alternatives |
@@ -397,17 +501,49 @@ models. All models are Apache-2.0.
 | `gemini` | `GeminiProvider` | Generative Language REST API | JSON mode |
 | `ollama` | `OllamaProvider` | Ollama `/api/chat` | `format: json`, thinking off, `OLLAMA_KEEP_ALIVE` |
 
-**Workloads.** Two independent configurations: `PHI_LLM_*` (text, PHI detection) and `DOC_LLM_*`
-(vision, figure descriptions). Each has a primary and an optional fallback.
+**Workloads.** Three independent configurations: `PHI_LLM_*` (text, PHI detection), `DOC_LLM_*`
+(vision, figure descriptions) and `EXTRACT_LLM_*` (data extraction). Each has a primary and an optional
+fallback. Credentials resolve as: the workload's own key, then `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` /
+`GEMINI_API_KEY`, then the key of another workload on the same provider (`resolve_api_key`).
+
+**Tool calling.** `tool_chat(system, history, tools)` takes a provider-neutral conversation and returns an
+`AgentTurn` (text, tool calls, native message, token usage). Native assistant messages are replayed unchanged
+to the same model, so Claude thinking blocks, OpenAI encrypted reasoning and Gemini thought signatures are
+preserved. OpenAI reasoning models go through `/v1/responses`, because Chat Completions does not accept
+function tools together with reasoning effort on them. `chat(..., json_schema=...)` asks for structured
+output (OpenAI strict JSON schema, Claude output format, Gemini response schema, Ollama format).
 
 **Failover** (`FailoverLLM`): calls go to the primary; on an authentication error, outage or exhausted
 retries the call is repeated on the fallback, and the primary is skipped for
 `LLM_FAILOVER_COOLDOWN_SECONDS`. `get_llm_client(mode)` builds the client.
 
+**Usage and cost.** `FailoverLLM.call_log` records the tokens of every call; `shared/usage.py` turns it into a
+report (calls, uncached input, cache reads and writes, output, cost per model and in total) for PHI redaction,
+structured parsing and data extraction. It is stored in `stats.usage`, returned as `usage` on every job, and shown
+on each review page and in Job History.
+
 **Health** (`describe_llm`): each engine is probed (model listing, or a one-token completion for
 restricted keys) and the result cached for five minutes; `/admin/system` shows which engine is in use.
 
-**Default local model:** `qwen3.5:4b` (Apache-2.0) pulled by `ollama-init`.
+**Engine settings per service (control panel).** The engine of each service is stored in `platform_settings`:
+`phi`, `doc`, `extract` (primary, fallback, reasoning effort), `extract_toc` (index detection mode and engine) and
+`extract_embed` (embedding provider and model). At the first start `api/prestart.py` seeds every row from .env;
+from then on administrators change them under **Administration, AI Engines** (`/admin/llm-config`), with save,
+connection test and reset to the .env values, each written to the audit log. `shared/runtime_config.py` serves the
+effective values to the API and the worker with a 5 second cache, so new jobs use a change within seconds; it falls
+back to .env when the database is unreachable or `RUNTIME_CONFIG_SOURCE=env`. API keys are never stored there.
+Selection lists come from the model catalog; a provider's `account_models` limits what is offered.
+
+**Index (contents) detection modes** (`extract_toc`): `rules` (regular expressions, no model), `llm` (the model
+looks for the contents pages and structures them), `hybrid` (rules first, the model when they find nothing). PDF
+bookmarks are used first in every mode. The engine can differ from the extraction engine (for example a small,
+cheap model for indexing and a reasoning model for extraction).
+
+**Default local model:** `qwen3.5:4b` (Apache-2.0) pulled by `ollama-init`, with `qwen3-embedding:0.6b` for
+retrieval. `OLLAMA_NUM_CTX` (32768) is the context of every local request; 8192 is too small for agentic extraction
+with a 4B model (3 to 11 of 16 fields, against 16 of 16 at 32768). `OLLAMA_NUM_PARALLEL` (2) bounds the KV memory,
+and `OLLAMA_MAX_LOADED_MODELS` (2) keeps the chat and embedding models loaded together, which avoids a model reload on
+every agent turn (606 s down to 78 s on the 100-page test contract).
 
 ## 12. Front end (web app)
 
@@ -448,10 +584,11 @@ React 18 + TypeScript, built with Vite 6, styled with Tailwind 3, served by ngin
 | `/` | Overview | Signed in |
 | `/phi`, `/phi/jobs/:id` | PHI redaction: Upload, Configure (entity types, custom entities, style), Process, Review | `phi` |
 | `/parse`, `/parse/jobs/:id` | Document parsing: Upload, Configure, Process, Review | `parse` |
+| `/extract`, `/extract/jobs/:id` | Data extraction: Upload, Define output (spec editor with live validation), Process, Review (fields with evidence pages, JSON, document map, agent activity) | `extract` |
 | `/jobs` | Job history | Signed in |
 | `/api-access` | API keys and integration examples | Signed in |
 | `/account` | Profile and password | Signed in |
-| `/admin/users`, `/admin/system`, `/admin/audit` | Administration | Admin |
+| `/admin/users`, `/admin/system`, `/admin/engines`, `/admin/audit` | Administration (AI Engines: engine per service) | Admin |
 
 Design rules: light theme, white background, blue accents, Inter, no emojis, titles with a subtitle,
 subtle animation only.
@@ -460,14 +597,16 @@ subtle animation only.
 
 All configuration comes from environment variables (`.env`, template `.env.example`), loaded by
 `shared/config.py`. Groups: stack and ports; database; authentication and super admin seed; limits and
-storage; PHI and document LLM engines with fallbacks; OCR models and rendering; worker concurrency.
+storage; PHI, document and extraction LLM engines with fallbacks; provider keys; extraction limits,
+context threshold and cap, chunking and embeddings; OCR models and rendering; worker concurrency. Model facts
+(context windows, prices) are data, in `shared/model_catalog.json`.
 Nothing is hard-coded and secrets are never logged.
 
 ## 14. Performance design
 
 | Technique | Where | Effect (measured) |
 |---|---|---|
-| Parallel LLM calls per job (`PHI_LLM_CONCURRENCY=16`) on 120-word chunks | `detector.py` | 30-page PDF detection 55 s to 15.5 s |
+| Parallel LLM calls per job (`PHI_LLM_CONCURRENCY=16`) across pages (one call per page) | `detector.py` | 30-page PDF detection 55 s to 15.5 s |
 | Concurrent job slots sharing models (`WORKER_CONCURRENCY=3`) | `worker/main.py` | about 55 pages/min under load, 3.2x serial |
 | PP-OCRv6 small instead of v5 server | `ocr_instance.py` | 1.9x faster OCR |
 | OCR warm-up at start | `worker/main.py` | no first-job penalty |
@@ -492,7 +631,7 @@ git-ignored `dev_space/` folder; see `CLAUDE.md`.
 * GPU: NVIDIA driver and Container Toolkit. `ec2_setup.sh` prepares an Amazon Linux 2023 GPU host.
 * Put TLS in front of `web` and set `COOKIE_SECURE=true`.
 * Scale out by running more `worker` replicas against the same Valkey and PostgreSQL.
-* Licences: `docs/THIRD_PARTY_LICENSES.md`; check with `tools/license_audit.py`.
+* Licences: `THIRD_PARTY_LICENSES.md`; check with `tools/license_audit.py`.
 
 ## 17. Extension points
 
@@ -502,6 +641,8 @@ git-ignored `dev_space/` folder; see `CLAUDE.md`.
 | A built-in PHI type | `BUILTIN_ENTITIES` in `shared/phi_catalog.py` (and a pattern in `detector.py` if deterministic) |
 | A redaction format | New module in `worker/phi/`, a branch in `engine.py: run_phi`, the type in `shared/formats.py` |
 | A role or service | `ROLE_SERVICES` and `JOB_SERVICE` in `shared/models.py`; a migration if stored values change |
+| A model or a price change | `shared/model_catalog.json` (no code change) |
+| An extraction agent tool | `TOOL_SPECS` and `DocumentTools.execute` in `worker/extract/agent.py` |
 | An API route | Router in `api/routers/`, mounted in `api/main.py`, guarded with `require_service` / `require_admin` |
 | A screen | Page in `frontend/src/pages/`, route in `App.tsx`, nav entry in `Layout.tsx` |
 | A schema change | New Alembic revision in `migrations/versions/` |

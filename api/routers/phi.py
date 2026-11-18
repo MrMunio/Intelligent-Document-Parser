@@ -172,5 +172,6 @@ async def redact_text(body: RedactTextRequest, request: Request,
         "redacted_text": result.get("redacted_text", ""),
         "entities": result.get("entities", []),
         "summary": result.get("summary", {}),
+        "usage": result.get("usage"),
         "duration_ms": done.duration_ms,
     }

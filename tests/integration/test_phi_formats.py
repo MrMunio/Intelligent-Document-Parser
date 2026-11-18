@@ -17,7 +17,7 @@ import pypdfium2 as pdfium
 import pytest
 from PIL import Image
 
-from tests.integration.conftest import CUSTOM_EMPLOYEE, FIXTURES, record
+from tests.integration.conftest import CUSTOM_EMPLOYEE, PHI_DIR, record
 
 CASES = [
     ("discharge_summary.pdf", "pdf", True),
@@ -63,7 +63,7 @@ def _recall(values, metadata) -> tuple[float, list]:
 
 @pytest.mark.parametrize("name, fmt, has_text", CASES)
 def test_redaction_preserves_format_and_removes_phi(phi_api, expected, name, fmt, has_text):
-    path = os.path.join(FIXTURES, name)
+    path = os.path.join(PHI_DIR, name)
     with open(path, "rb") as f:
         payload = f.read()
     started = time.perf_counter()
@@ -74,6 +74,11 @@ def test_redaction_preserves_format_and_removes_phi(phi_api, expected, name, fmt
     wall_ms = int((time.perf_counter() - started) * 1000)
     assert job["status"] == "COMPLETED", job.get("error")
     assert job["input_format"] == fmt
+    # Language model usage and cost are reported on every PHI job
+    usage = job["usage"]["total"]
+    assert usage["calls"] >= 1 and usage["input_tokens"] + usage["cache_read_tokens"] > 0
+    assert usage["cost_usd"] is not None and usage["priced"]
+    assert job["stats"]["usage"] == job["usage"] and job["result_data"]["usage"] == job["usage"]
 
     # Same format out as in
     stem, ext = os.path.splitext(name)
@@ -137,7 +142,7 @@ def test_redaction_preserves_format_and_removes_phi(phi_api, expected, name, fmt
 
 
 def test_sync_redact_returns_the_file_directly(phi_api):
-    with open(os.path.join(FIXTURES, "progress_note.docx"), "rb") as f:
+    with open(os.path.join(PHI_DIR, "progress_note.docx"), "rb") as f:
         res = phi_api.post("/phi/redact", files={"file": ("progress_note.docx", f.read())},
                            data={"response_format": "file", "redaction_style": "blackout"})
     assert res.status_code == 200

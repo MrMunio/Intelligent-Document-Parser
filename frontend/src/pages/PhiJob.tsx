@@ -7,6 +7,7 @@ import { DocumentViewer, kindOf } from "../components/viewers";
 import { Alert, Button, EmptyState, Page, PageHeader, Segmented, Spinner, StatusBadge, Stepper, Tabs, Tag, useToast } from "../components/ui";
 import { apiBlob, ApiError, downloadFile } from "../lib/api";
 import { entityLabel, formatBytes, formatDate, formatDuration, maskValue, recallOriginal } from "../lib/format";
+import { formatCost, UsageSummary } from "../components/UsageSummary";
 import { useJob } from "../lib/hooks";
 import type { Job } from "../lib/types";
 import { PHI_STEPS } from "./PhiNew";
@@ -244,11 +245,18 @@ function Review({ job }: { job: Job }) {
               <Fact label="Detection engine" value={engines.join(", ")} />
               <Fact label="Model calls" value={meta.engine?.llm?.calls} />
               <Fact label="Tokens in / out" value={meta.engine?.llm ? `${meta.engine.llm.input_tokens} / ${meta.engine.llm.output_tokens}` : null} />
+              <Fact label="Language model cost" value={job.usage ? formatCost(job.usage.total) : null} />
               <Fact label="OCR models" value={meta.engine?.ocr ? `${meta.engine.ocr.detection_model}, ${meta.engine.ocr.recognition_model}` : null} />
               <Fact label="Text recognition time" value={meta.timings_ms?.ocr_ms ? formatDuration(meta.timings_ms.ocr_ms) : null} />
               <Fact label="Detection time" value={meta.timings_ms?.detect_ms ? formatDuration(meta.timings_ms.detect_ms) : null} />
               <Fact label="Redaction style" value={meta.options?.redaction_style === "blackout" ? "Blackout" : "Labelled placeholders"} />
               <Fact label="Custom entities" value={(meta.options?.custom_entities ?? []).map((c: { label: string }) => c.label).join(", ")} />
+              <div className="py-2.5">
+                <dt className="mb-1.5 text-[13px] text-ink-600">Usage by engine</dt>
+                <dd>
+                  <UsageSummary usage={job.usage} compact emptyText="Pattern detectors only: no language model calls." />
+                </dd>
+              </div>
             </dl>
           )}
 

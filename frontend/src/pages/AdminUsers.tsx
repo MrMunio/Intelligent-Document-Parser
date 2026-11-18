@@ -7,7 +7,7 @@ import { useAuth } from "../lib/auth";
 import { formatRelative } from "../lib/format";
 import { ROLE_DESCRIPTIONS, ROLE_LABELS, type Role, type User } from "../lib/types";
 
-const ALL_ROLES: Role[] = ["super_admin", "admin", "document_parser", "phi_redactor"];
+const ALL_ROLES: Role[] = ["super_admin", "admin", "document_parser", "phi_redactor", "data_extractor"];
 const ADMIN_ROLES: Role[] = ["super_admin", "admin"];
 
 function RolePicker({ value, onChange, allowed }: { value: Role[]; onChange: (roles: Role[]) => void; allowed: Role[] }) {

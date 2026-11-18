@@ -15,6 +15,7 @@ from PIL import Image
 
 from shared.config import settings
 from shared.llm import get_llm_client
+from shared.usage import report_from_calls
 from shared.logger import setup_logger
 from worker import pdf_util
 
@@ -245,6 +246,7 @@ async def run_parse(file_path: str, original_name: Optional[str] = None, *, ai_s
             progress("describing", 85, f"Describing {len(vision_tasks)} figure(s) with the vision model")
             await asyncio.gather(*vision_tasks)
         llm_usage = dict(llm.usage)
+        usage = report_from_calls(llm.call_log)
 
     elapsed = time.perf_counter() - t0
     page_count = max((m["page"] for m in metas), default=0) + 1
@@ -272,6 +274,7 @@ async def run_parse(file_path: str, original_name: Optional[str] = None, *, ai_s
             "generator": f"PP-StructureV3 ({settings.ocr_det_model}, {settings.ocr_rec_model})",
             "figures_described": sum(1 for m in metas if m.get("ai_summary")),
             "llm": llm_usage,
+            "usage": usage,
         },
         "chunks": metas,
     }

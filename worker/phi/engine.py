@@ -7,7 +7,9 @@ from typing import Callable
 from shared.config import settings
 from shared.formats import (FORMAT_DOCX, FORMAT_IMAGE, FORMAT_PDF, FORMAT_TEXT, classify, extension_of,
                             media_type_for, safe_file_name)
+from shared import runtime_config
 from shared.llm import get_llm_client
+from shared.usage import report_from_calls
 from shared.logger import setup_logger
 from shared.phi_catalog import normalize_phi_options
 from worker.phi.detector import Detector
@@ -56,11 +58,13 @@ async def run_phi(job_id: str, input_path: str, original_name: str, input_format
         else:
             raise ValueError(f"Unsupported input format '{input_format}'.")
         llm_stats = detector.stats()
+        usage = report_from_calls(llm.call_log)
 
+    phi_primary = runtime_config.get("phi").get("primary") or {}
     ocr_used = input_format == FORMAT_IMAGE or result["summary"].get("pages_ocr", 0) > 0
     engine = {
         "llm": {
-            "configured": f"{settings.phi_llm_provider}:{settings.phi_llm_model}",
+            "configured": f"{phi_primary.get('provider')}:{phi_primary.get('model')}",
             "used": llm_stats.get("engines", {}),
             "calls": llm_stats.get("calls", 0),
             "failovers": llm_stats.get("failovers", 0),
@@ -72,6 +76,7 @@ async def run_phi(job_id: str, input_path: str, original_name: str, input_format
                  "render_dpi": settings.phi_render_dpi} if ocr_used else None),
         "pattern_detectors": options["use_pattern_detectors"],
     }
+    engine["llm"]["cost_usd"] = usage["total"]["cost_usd"]
     public_options = {k: v for k, v in options.items() if k != "inline_text"}
     metadata = {
         "schema_version": "2.0",
@@ -83,6 +88,7 @@ async def run_phi(job_id: str, input_path: str, original_name: str, input_format
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "options": public_options,
         "engine": engine,
+        "usage": usage,
         **result,
     }
     log.info("[run_phi] job %s: %s occurrence(s), %s unique, verification=%s, %sms", job_id,

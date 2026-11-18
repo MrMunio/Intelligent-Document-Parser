@@ -35,7 +35,8 @@ def _worker_status() -> dict:
 
 @router.get("/system", summary="Platform health: worker, queues, OCR models and LLM engines")
 async def system_status(_: Principal = Depends(require_admin), db: Session = Depends(get_db)):
-    doc_llm, phi_llm = await asyncio.gather(describe_llm("doc"), describe_llm("phi"))
+    doc_llm, phi_llm, extract_llm = await asyncio.gather(describe_llm("doc"), describe_llm("phi"),
+                                                         describe_llm("extract"))
     try:
         queues = {"priority": priority_queue.count, "default": default_queue.count}
         redis_ok = True
@@ -62,7 +63,13 @@ async def system_status(_: Principal = Depends(require_admin), db: Session = Dep
             "render_dpi": settings.phi_render_dpi,
             "render_workers": settings.render_workers,
         },
-        "llm": {"phi": phi_llm, "doc": doc_llm},
+        "llm": {"phi": phi_llm, "doc": doc_llm, "extract": extract_llm},
+        "extraction": {
+            "context_threshold": settings.extract_context_threshold,
+            "context_cap_tokens": settings.extract_context_cap_tokens,
+            "embedding": f"{settings.extract_embed_provider}:{settings.extract_embed_model}",
+            "reasoning_effort": settings.extract_reasoning_effort,
+        },
         "limits": {"max_upload_mb": settings.max_upload_mb, "file_retention_days": settings.file_retention_days,
                    "storage_mode": settings.storage_mode},
         "jobs_last_24h": {

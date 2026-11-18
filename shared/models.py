@@ -11,22 +11,25 @@ ROLE_SUPER_ADMIN = "super_admin"
 ROLE_ADMIN = "admin"
 ROLE_DOCUMENT_PARSER = "document_parser"
 ROLE_PHI_REDACTOR = "phi_redactor"
-ALL_ROLES = [ROLE_SUPER_ADMIN, ROLE_ADMIN, ROLE_DOCUMENT_PARSER, ROLE_PHI_REDACTOR]
+ROLE_DATA_EXTRACTOR = "data_extractor"
+ALL_ROLES = [ROLE_SUPER_ADMIN, ROLE_ADMIN, ROLE_DOCUMENT_PARSER, ROLE_PHI_REDACTOR, ROLE_DATA_EXTRACTOR]
 ADMIN_ROLES = {ROLE_SUPER_ADMIN, ROLE_ADMIN}
 
 # Services (what a role or an API key scope unlocks).
 SERVICE_PARSE = "parse"
 SERVICE_PHI = "phi"
-ALL_SERVICES = [SERVICE_PARSE, SERVICE_PHI]
+SERVICE_EXTRACT = "extract"
+ALL_SERVICES = [SERVICE_PARSE, SERVICE_PHI, SERVICE_EXTRACT]
 ROLE_SERVICES = {
-    ROLE_SUPER_ADMIN: {SERVICE_PARSE, SERVICE_PHI},
-    ROLE_ADMIN: {SERVICE_PARSE, SERVICE_PHI},
+    ROLE_SUPER_ADMIN: {SERVICE_PARSE, SERVICE_PHI, SERVICE_EXTRACT},
+    ROLE_ADMIN: {SERVICE_PARSE, SERVICE_PHI, SERVICE_EXTRACT},
     ROLE_DOCUMENT_PARSER: {SERVICE_PARSE},
     ROLE_PHI_REDACTOR: {SERVICE_PHI},
+    ROLE_DATA_EXTRACTOR: {SERVICE_EXTRACT},
 }
 
 # Job type -> service required to submit or read it.
-JOB_SERVICE = {"PARSE": SERVICE_PARSE, "OCR": SERVICE_PARSE, "PHI": SERVICE_PHI}
+JOB_SERVICE = {"PARSE": SERVICE_PARSE, "OCR": SERVICE_PARSE, "PHI": SERVICE_PHI, "EXTRACT": SERVICE_EXTRACT}
 
 
 def services_for_roles(roles) -> set:
@@ -75,7 +78,7 @@ class JobRequest(Base):
     __table_args__ = {"schema": SCHEMA}
 
     id = Column(String(50), primary_key=True, index=True)
-    job_type = Column(String(20), nullable=False)  # PARSE | OCR | PHI
+    job_type = Column(String(20), nullable=False)  # PARSE | OCR | PHI | EXTRACT
     status = Column(String(20), nullable=False, default="PENDING")  # PENDING | PROCESSING | COMPLETED | FAILED
     original_file_name = Column(String(255))
     result_data = Column(JSONB, nullable=True)
@@ -115,3 +118,15 @@ class AuditLog(Base):
     target_id = Column(String(60), nullable=True)
     detail = Column(JSONB, nullable=True)
     ip_address = Column(String(64), nullable=True)
+
+
+class PlatformSetting(Base):
+    """Engine configuration per service. Seeded from .env at first start, then edited by administrators."""
+    __tablename__ = "platform_settings"
+    __table_args__ = {"schema": SCHEMA}
+
+    key = Column(String(60), primary_key=True)
+    value = Column(JSONB, nullable=False)
+    source = Column(String(20), nullable=False, default="env")  # env | admin
+    updated_by = Column(String(255), nullable=True)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

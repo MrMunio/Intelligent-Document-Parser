@@ -8,6 +8,7 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import text
 
+from shared import runtime_config
 from shared.config import settings
 from shared.database import SessionLocal, engine
 from shared.models import ROLE_SUPER_ADMIN, User
@@ -61,6 +62,13 @@ def seed_super_admin() -> None:
         db.close()
 
 
+def seed_engine_settings() -> None:
+    """First start: engine settings per service come from .env; afterwards administrators edit them in the web app."""
+    seeded = runtime_config.seed_from_env()
+    if seeded:
+        log.info("engine settings seeded from .env for: %s", ", ".join(seeded))
+
+
 if __name__ == "__main__":
     if settings.jwt_secret in ("", "change-me-in-env") or len(settings.jwt_secret) < 32:
         log.error("JWT_SECRET must be set to a random value of at least 32 characters.")
@@ -68,3 +76,4 @@ if __name__ == "__main__":
     wait_for_database()
     migrate()
     seed_super_admin()
+    seed_engine_settings()

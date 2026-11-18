@@ -10,6 +10,7 @@ if ROOT not in sys.path:
 
 os.environ.setdefault("DATA_DIR", "/tmp/idp-unit")
 os.environ.setdefault("JWT_SECRET", "unit-test-secret-unit-test-secret-0123456789")
+os.environ.setdefault("RUNTIME_CONFIG_SOURCE", "env")  # engine settings from .env values only: no database in unit tests
 
 
 class StubLLM:

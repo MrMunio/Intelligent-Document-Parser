@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
-from api.routers import admin, api_keys, auth, jobs, parse, phi, users
+from api.routers import admin, api_keys, auth, extract, jobs, llm_config, parse, phi, users
 from shared.config import settings
 from shared.database import SessionLocal
 from shared.queue import redis_conn
@@ -14,7 +14,8 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(level
 log = logging.getLogger("api")
 
 DESCRIPTION = """
-Intelligent Document Processing platform: **PHI redaction** and **document parsing**.
+Intelligent Document Processing platform: **PHI redaction**, **document parsing** and **data extraction**
+(document to JSON following a spec you send with each request).
 
 **Authentication.** Every endpoint under `/api/v1` requires one of:
 
@@ -23,7 +24,7 @@ Intelligent Document Processing platform: **PHI redaction** and **document parsi
 
 **Working with jobs.** Submit with a `.../jobs` endpoint (returns `202` and a job id) and poll
 `GET /api/v1/jobs/{job_id}`, or use the synchronous variants (`/phi/redact`, `/phi/redact-text`,
-`/parse/sync`) which wait for the result.
+`/parse/sync`, `/extract/sync`, `/extract/text`) which wait for the result.
 """
 
 app = FastAPI(
@@ -41,7 +42,7 @@ if origins:
                        allow_methods=["*"], allow_headers=["*"], expose_headers=["X-Job-Id", "Content-Disposition"])
 
 v1 = APIRouter(prefix="/api/v1")
-for module in (auth, users, api_keys, phi, parse, jobs, admin):
+for module in (auth, users, api_keys, phi, parse, extract, jobs, admin, llm_config):
     v1.include_router(module.router)
 app.include_router(v1)
 

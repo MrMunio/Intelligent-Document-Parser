@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from api.deps import Principal
 from api.schemas import JobAccepted, JobOut
 from shared.config import settings
+from shared.extract_spec import order_result
 from shared.database import SessionLocal
 from shared.formats import classify, extension_of, safe_file_name
 from shared.models import JobRequest, User
@@ -46,9 +47,16 @@ def job_out(job: JobRequest, *, owner_email: Optional[str] = None, include_resul
         result_file_name=job.result_file_name, result_media_type=job.result_media_type,
         result_available=bool(job.status == "COMPLETED"),
         links=job_links(job),
-        result_data=job.result_data if include_result else None,
+        usage=(job.stats or {}).get("usage"),
+        result_data=_result_data(job) if include_result else None,
         result_markdown=job.result_markdown if include_result else None,
     )
+
+
+def _result_data(job: JobRequest):
+    if job.job_type == "EXTRACT":  # JSONB sorted the keys; restore the requester's order
+        return order_result(job.result_data, (job.options or {}).get("spec"))
+    return job.result_data
 
 
 def _public_error(details: Optional[str]) -> Optional[str]:

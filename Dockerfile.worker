@@ -38,7 +38,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     pip install -r requirements_worker.txt \
     && if [ "$INSTALL_DEV" = "true" ]; then pip install -r requirements_dev.txt; fi
 
-# Licence hygiene (see docs/THIRD_PARTY_LICENSES.md): remove packages that PaddleX installs but this service
+# Licence hygiene (see THIRD_PARTY_LICENSES.md): remove packages that PaddleX installs but this service
 # never uses and that no pipeline requires.
 #   bce-python-sdk -> crc32c (LGPL): only for uploading to Baidu cloud storage
 # python-bidi, cssutils and encutils (LGPL) stay: PaddleX requires them before it will build the OCR and

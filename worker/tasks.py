@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from shared.database import SessionLocal
 from shared.logger import setup_logger
 from shared.models import JobRequest
+from shared.usage import no_usage
 from worker.storage import cleanup_old_files, save_file
 
 log = setup_logger("worker.tasks")
@@ -63,6 +64,7 @@ def _run_phi(job: JobRequest, progress) -> dict:
             "pages_ocr": summary.get("pages_ocr"), "pages_text_layer": summary.get("pages_text_layer"),
             "verification": meta["verification"]["status"], "timings_ms": meta["timings_ms"],
             "llm": meta["engine"]["llm"],
+            "usage": meta.get("usage"),
         },
     }
 
@@ -76,7 +78,7 @@ def _run_parse(job: JobRequest, progress) -> dict:
     return {"result_markdown": markdown, "result_data": data,
             "stats": {"pages": meta.get("page_count"), "chunks": len(data.get("chunks", [])),
                       "timings_ms": {"total_ms": int(meta.get("duration_s", 0) * 1000)},
-                      "llm": meta.get("llm")}}
+                      "llm": meta.get("llm"), "usage": meta.get("usage")}}
 
 
 def _run_ocr(job: JobRequest, progress) -> dict:
@@ -85,10 +87,41 @@ def _run_ocr(job: JobRequest, progress) -> dict:
     markdown, data = run_ocr(job.input_path)
     lines = sum(len(p.get("lines", [])) for p in data.get("pages", []))
     return {"result_markdown": markdown, "result_data": data,
-            "stats": {"pages": data.get("page_count"), "lines": lines}}
+            "stats": {"pages": data.get("page_count"), "lines": lines, "usage": no_usage()}}
 
 
-RUNNERS = {"PHI": _run_phi, "PARSE": _run_parse, "OCR": _run_ocr}
+def _run_extract(job: JobRequest, progress) -> dict:
+    import tempfile
+    from worker.extract.engine import run_extract
+    outcome = asyncio.run(run_extract(job.id, job.input_path, job.original_file_name or "document",
+                                      job.input_format, job.options or {}, progress))
+    result = outcome["result"]
+    with tempfile.TemporaryDirectory(prefix="extract-") as tmp:
+        path = os.path.join(tmp, outcome["output_name"])
+        with open(path, "wb") as f:
+            f.write(outcome["output_bytes"])
+        url = save_file(path, job.id, outcome["output_name"])
+    usage = result.get("usage", {}).get("total", {})
+    agent = result.get("agent") or {}
+    return {
+        "result_data": result,
+        "result_file_url": url,
+        "result_file_name": outcome["output_name"],
+        "result_media_type": "application/json",
+        "stats": {
+            "approach": result["approach"], "fields": result["summary"]["total"],
+            "found": result["summary"]["found"], "not_found": result["summary"]["not_found"],
+            "coverage": result["summary"]["coverage"], "complete": result["complete"],
+            "pages": result["document"]["pages"], "model": f"{result['engine']['provider']}:{result['engine']['model']}",
+            "llm_calls": usage.get("calls"), "input_tokens": usage.get("input_tokens"),
+            "output_tokens": usage.get("output_tokens"), "cost_usd": usage.get("cost_usd"),
+            "sessions": len(agent.get("sessions") or []) or None, "compactions": agent.get("compactions"),
+            "timings_ms": result.get("timings_ms"), "usage": result.get("usage"),
+        },
+    }
+
+
+RUNNERS = {"PHI": _run_phi, "PARSE": _run_parse, "OCR": _run_ocr, "EXTRACT": _run_extract}
 
 
 def process_job(job_id: str) -> None:
