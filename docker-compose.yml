@@ -1,0 +1,162 @@
+name: idp
+
+# Start everything:            docker compose up -d --build
+# The local Ollama engine is part of the "ollama" profile, enabled through COMPOSE_PROFILES in .env.
+# Web UI:  http://localhost:${WEB_PORT:-3000}      API docs: http://localhost:${API_PORT:-8000}/api/docs
+
+x-app-env: &app-env
+  REDIS_HOST: redis
+  REDIS_PORT: "6379"
+  DATABASE_URL: postgresql://${DB_USER:-idp_user}:${DB_PASSWORD:-idp_password}@postgres:5432/${DB_NAME:-idp_db}
+  DATA_DIR: /app/data
+
+services:
+  postgres:
+    image: postgres:15
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-idp_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-idp_password}
+      POSTGRES_DB: ${DB_NAME:-idp_db}
+    volumes:
+      - ./db_init:/docker-entrypoint-initdb.d:ro
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-idp_user} -d ${DB_NAME:-idp_db}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [idp_network]
+
+  # Valkey: BSD-3 licensed, protocol-compatible fork of Redis (Redis 7.4+ is RSALv2 / SSPLv1).
+  redis:
+    image: valkey/valkey:8-alpine
+    restart: unless-stopped
+    command: ["valkey-server", "--save", "60", "1", "--loglevel", "warning"]
+    volumes:
+      - valkey_data:/data
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [idp_network]
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+      args:
+        INSTALL_DEV: ${INSTALL_DEV:-false}
+    restart: unless-stopped
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    env_file: [.env]
+    environment:
+      <<: *app-env
+    ports:
+      - "${API_PORT:-8000}:8000"
+    volumes:
+      - idp_data:/app/data
+    networks: [idp_network]
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+      args:
+        HPI_WHL_LOCAL: ${HPI_WHL_LOCAL:-}
+        INSTALL_DEV: ${INSTALL_DEV:-false}
+    restart: unless-stopped
+    depends_on:
+      api: {condition: service_healthy}   # the API applies database migrations
+      redis: {condition: service_healthy}
+    env_file: [.env]
+    environment:
+      <<: *app-env
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    shm_size: "2gb"
+    volumes:
+      - idp_data:/app/data
+      - paddle_models:/root/.paddlex
+      - paddle_ocr_models:/root/.paddleocr
+    networks: [idp_network]
+
+  web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      api: {condition: service_healthy}
+    ports:
+      - "${WEB_PORT:-3000}:80"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    networks: [idp_network]
+
+  # ---- Local LLM engine (profile: ollama) ------------------------------------------------------
+  ollama:
+    image: ollama/ollama:latest
+    profiles: [ollama]
+    restart: unless-stopped
+    environment:
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-30m}
+      OLLAMA_NUM_PARALLEL: ${OLLAMA_NUM_PARALLEL:-4}
+      OLLAMA_MAX_LOADED_MODELS: "1"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    volumes:
+      - ollama_models:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    networks: [idp_network]
+
+  # Downloads the configured local models once, then exits.
+  ollama-init:
+    image: ollama/ollama:latest
+    profiles: [ollama]
+    depends_on:
+      ollama: {condition: service_healthy}
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+      MODELS: ${OLLAMA_PULL_MODELS:-qwen3.5:4b}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        for model in $$MODELS; do
+          echo "Pulling $$model"; ollama pull "$$model" || exit 1
+        done
+        echo "Local models are ready."
+    restart: "no"
+    networks: [idp_network]
+
+volumes:
+  postgres_data:
+  valkey_data:
+  idp_data:
+  paddle_models:
+  paddle_ocr_models:
+  ollama_models:
+
+networks:
+  idp_network:
+    driver: bridge

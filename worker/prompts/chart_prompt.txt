@@ -1,0 +1,5 @@
+Analyze this chart or graph.
+1. Describe the type of chart (e.g., bar, line, pie).
+2. Identify the x-axis and y-axis labels and units.
+3. Provide a concise, descriptive summary of the key trends, data points, or conclusions shown in the chart.
+Make the summary suitable for Retrieval-Augmented Generation (RAG). Do not output raw tabular data, just a textual summary.

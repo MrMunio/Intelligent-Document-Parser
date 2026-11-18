@@ -1,0 +1,19 @@
+.git
+.env
+.env.*
+!.env.example
+**/__pycache__
+**/*.pyc
+**/node_modules
+frontend/dist
+data
+logs
+docs
+test files
+api_results
+*.log
+.vscode
+.idea
+frontend
+dev_space
+migrations/__pycache__

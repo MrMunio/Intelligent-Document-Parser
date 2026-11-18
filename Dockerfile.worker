@@ -1,0 +1,56 @@
+# syntax=docker/dockerfile:1.7
+FROM paddlepaddle/paddle:3.3.0-gpu-cuda12.6-cudnn9.5
+
+# MALLOC_*: page images are about 11 MB each. A fixed mmap threshold makes glibc return them to the OS
+# when freed, and fewer arenas stop per-thread heaps from holding memory between jobs.
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 \
+    PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK=True \
+    MALLOC_ARENA_MAX=2 \
+    MALLOC_MMAP_THRESHOLD_=1048576 \
+    MALLOC_TRIM_THRESHOLD_=1048576
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgl1 libglib2.0-0 libsm6 libxext6 libxrender1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# PaddleOCR 3.7 ships PP-OCRv6 (tiny / small / medium). The doc-parser extra brings PP-StructureV3.
+ARG PADDLEOCR_VERSION=3.7.0
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --upgrade pip && pip install "paddleocr[doc-parser]==${PADDLEOCR_VERSION}"
+
+# Optional high-performance inference plugin. Set HPI_WHL_LOCAL to a wheel inside the build context
+# (for example dependencies/hpi_whl/ultra_infer_gpu_python-1.2.0-cp310-cp310-linux_x86_64.whl).
+# The build context is bind-mounted for this step only, so nothing from it is baked into a layer.
+ARG HPI_WHL_LOCAL=""
+RUN --mount=type=bind,source=.,target=/build_ctx,readonly \
+    --mount=type=cache,target=/root/.cache/pip \
+    WHL="/build_ctx/$(echo "$HPI_WHL_LOCAL" | tr '\' '/')" && \
+    if [ -n "$HPI_WHL_LOCAL" ] && [ -f "$WHL" ]; then \
+        echo "Installing HPI plugin from $WHL" && pip install "$WHL"; \
+    else \
+        echo "HPI plugin not requested (HPI_WHL_LOCAL is empty or the file is missing)"; \
+    fi
+
+COPY requirements_worker.txt requirements_dev.txt ./
+ARG INSTALL_DEV=false
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install -r requirements_worker.txt \
+    && if [ "$INSTALL_DEV" = "true" ]; then pip install -r requirements_dev.txt; fi
+
+# Licence hygiene (see docs/THIRD_PARTY_LICENSES.md): remove packages that PaddleX installs but this service
+# never uses and that no pipeline requires.
+#   bce-python-sdk -> crc32c (LGPL): only for uploading to Baidu cloud storage
+# python-bidi, cssutils and encutils (LGPL) stay: PaddleX requires them before it will build the OCR and
+# PP-StructureV3 pipelines. They are used unmodified as separately installed packages.
+# The check fails the build if anything the pipelines require is missing.
+RUN pip uninstall -y bce-python-sdk crc32c pymupdf psycopg2-binary 2>/dev/null; \
+    python -c "import paddleocr, pypdfium2, reportlab, pg8000; \
+from paddlex.utils.deps import is_extra_available as ok; \
+assert ok('ocr') and ok('ocr-core'), 'PaddleX OCR dependencies are incomplete'" \
+    && echo "dependency check passed"
+
+COPY shared ./shared
+COPY worker ./worker
+
+CMD ["python", "-m", "worker.main"]

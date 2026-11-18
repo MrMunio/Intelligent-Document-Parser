@@ -1,0 +1,5 @@
+# Test-only dependencies (installed in the worker and API images with INSTALL_DEV=true)
+pytest>=8.0
+pytest-asyncio>=0.23
+python-docx>=1.1
+requests>=2.31

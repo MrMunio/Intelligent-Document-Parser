@@ -1,0 +1,29 @@
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements_api.txt requirements_dev.txt ./
+ARG INSTALL_DEV=false
+RUN pip install -r requirements_api.txt \
+    && if [ "$INSTALL_DEV" = "true" ]; then pip install -r requirements_dev.txt; fi
+
+COPY alembic.ini ./
+COPY migrations ./migrations
+COPY shared ./shared
+COPY api ./api
+
+# Run as an unprivileged user. /app/data is a volume shared with the worker.
+RUN useradd --uid 10001 --create-home app \
+    && mkdir -p /app/data/uploads /app/data/output /app/logs \
+    && chown -R app:app /app/data /app/logs
+USER app
+
+EXPOSE 8000
+HEALTHCHECK --interval=15s --timeout=5s --start-period=40s --retries=5 \
+    CMD curl -fsS http://localhost:8000/health || exit 1
+
+CMD ["sh", "-c", "python -m api.prestart && exec uvicorn api.main:app --host 0.0.0.0 --port 8000 --workers ${API_WORKERS:-2} --proxy-headers --forwarded-allow-ips='*'"]

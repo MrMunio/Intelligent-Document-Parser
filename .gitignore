@@ -1,0 +1,56 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*.class
+
+# Environment & Secrets
+.env*
+!.env.example
+*.pem
+*.key
+*.crt
+*.cert
+
+# Logs
+*.log
+
+# Dependencies & binary packages
+*.whl
+dependencies/
+
+# Runtime / processed data
+data/output/
+data/uploads/
+
+# Agent & Workspace rules
+AGENTS.md
+**/AGENTS.md
+dev_space/
+**/dev_space/
+.agents/
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# IDE / Editor
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Frontend and browser tests
+node_modules/
+frontend/dist/
+
+# Local compose overrides used for benchmarks
+docker-compose.bench.yml
+docker-compose.failover-test.yml
+
+
+CLAUDE.md
+data/
+.claude
